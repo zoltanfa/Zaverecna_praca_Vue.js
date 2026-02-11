@@ -39,6 +39,6 @@ body {
 }
 
 main {
-    padding-bottom: 0;
+  padding-bottom: 60px;
 }
 </style>
