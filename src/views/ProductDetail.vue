@@ -25,7 +25,7 @@ const showSameCategory = () => {
         <img :src="product.image" :alt="product.name" class="product-detail-image" />
         <div class="product-detail-info">
           <h1 class="product-detail-title">{{ product.name }}</h1>
-          <p class="product-detail-price">{{ product.price }} €</p>
+          <p class="product-detail-price">{{ product.price.toFixed(2) }} €</p>
           <p class="product-detail-description">{{ product.description }}</p>
           <button @click="handleAddToCart" class="add-to-cart-btn">🛒 Add to Cart</button>
           <button @click="showSameCategory" class="category-btn">Show {{ product.category }} Products</button>

@@ -168,7 +168,7 @@ onMounted(() => {
   }
 
   .main-title {
-    font-size: 24px;
+    font-size: 30px;
   }
 
   .order-header {
@@ -183,7 +183,7 @@ onMounted(() => {
   }
 
   .main-title {
-    font-size: 20px;
+    font-size: 24px;
   }
 
   .order-card {

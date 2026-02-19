@@ -37,8 +37,4 @@ body {
   flex: 1;
   width: 100%;
 }
-
-main {
-  padding-bottom: 60px;
-}
 </style>

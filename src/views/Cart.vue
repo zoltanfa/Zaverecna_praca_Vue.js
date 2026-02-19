@@ -20,7 +20,7 @@ const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice 
           <img :src="item.image" :alt="item.name" class="cart-item-image" />
           <div class="cart-item-details">
             <h3 class="cart-item-title">{{ item.name }}</h3>
-            <p class="cart-item-price">{{ item.price }} €</p>
+            <p class="cart-item-price">{{ item.price.toFixed(2) }} €</p>
           </div>
           <div class="cart-item-controls">
             <div class="quantity-controls">

@@ -19,7 +19,7 @@ const handleAddToCart = () => {
       <h3 class="product-title">{{ product.name }}</h3>
     </router-link>
     <div class="product-footer">
-      <p class="product-price">{{product.price}} €</p>
+      <p class="product-price">{{ product.price.toFixed(2) }} €</p>
       <button @click="handleAddToCart" class="add-to-cart-btn">🛒 Add to Cart</button>
     </div>
   </div>

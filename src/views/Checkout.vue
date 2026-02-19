@@ -502,7 +502,7 @@ const goBack = () => {
   }
 
   .main-title {
-    font-size: 20px;
+    font-size: 24px;
   }
 
   .form-section {

@@ -70,7 +70,7 @@ const featuredProducts = computed(() => {
   }
 
   .main-title {
-    font-size: 24px;
+    font-size: 30px;
   }
 
   .section-title {
@@ -88,7 +88,7 @@ const featuredProducts = computed(() => {
   }
 
   .main-title {
-    font-size: 20px;
+    font-size: 24px;
   }
 
   .main-description {
