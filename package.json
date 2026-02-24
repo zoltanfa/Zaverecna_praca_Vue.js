@@ -9,9 +9,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:gh": "vite build --base=/Zaverecna_praca_Vue.js/ && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "build:gh": "vite build --base=./ && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "vite preview",
-    "preview:gh": "vite preview --base=/Zaverecna_praca_Vue.js/"
+    "preview:gh": "vite preview",
+    "deploy": "npm run build:gh && gh-pages -d dist"
   },
   "dependencies": {
     "vue": "^3.5.26",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.3",
+    "gh-pages": "^6.3.0",
     "vite": "^7.3.0",
     "vite-plugin-vue-devtools": "^8.0.5"
   }
