@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "build:gh": "vite build --base=/Zaverecna_praca_Vue.js/ && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "preview": "vite preview",
+    "preview:gh": "vite preview --base=/Zaverecna_praca_Vue.js/"
   },
   "dependencies": {
     "vue": "^3.5.26",
