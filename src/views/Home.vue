@@ -79,7 +79,8 @@ const featuredProducts = computed(() => {
   }
 
   .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 150px));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: stretch;
   }
 }
 
@@ -101,7 +102,8 @@ const featuredProducts = computed(() => {
   }
 
   .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 150px));
+    grid-template-columns: 1fr;
+    justify-content: stretch;
     gap: 12px;
   }
 }
