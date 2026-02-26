@@ -60,7 +60,8 @@ const featuredProducts = computed(() => {
 
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 250px));
+  justify-content: start;
   gap: 16px;
 }
 
@@ -78,7 +79,7 @@ const featuredProducts = computed(() => {
   }
 
   .product-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 150px));
   }
 }
 
@@ -100,7 +101,7 @@ const featuredProducts = computed(() => {
   }
 
   .product-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(150px, 150px));
     gap: 12px;
   }
 }
