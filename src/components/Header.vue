@@ -1,4 +1,5 @@
 <script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useCart } from '@/composables/useCart.js'
 import { useSearch } from '@/composables/useSearch.js'
 import { useRouter } from 'vue-router'
@@ -6,10 +7,51 @@ import { useRouter } from 'vue-router'
 const { totalItems } = useCart()
 const { searchTerm } = useSearch()
 const router = useRouter()
+const accountMenuOpen = ref(false)
+const accountMenuRef = ref(null)
+const currentUser = ref(null)
+const CURRENT_USER_KEY = 'currentUser'
 
 const goToProducts = () => {
   router.push('/products')
 }
+
+const toggleAccountMenu = () => {
+  const savedUser = localStorage.getItem(CURRENT_USER_KEY)
+  currentUser.value = savedUser ? JSON.parse(savedUser) : null
+  accountMenuOpen.value = !accountMenuOpen.value
+}
+
+const closeAccountMenu = () => {
+  accountMenuOpen.value = false
+}
+
+const handleClickOutside = (event) => {
+  if (!accountMenuRef.value) {
+    return
+  }
+
+  if (!accountMenuRef.value.contains(event.target)) {
+    closeAccountMenu()
+  }
+}
+
+const handleLogout = () => {
+  localStorage.removeItem(CURRENT_USER_KEY)
+  currentUser.value = null
+  closeAccountMenu()
+  router.push('/')
+}
+
+onMounted(() => {
+  const savedUser = localStorage.getItem(CURRENT_USER_KEY)
+  currentUser.value = savedUser ? JSON.parse(savedUser) : null
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 
@@ -25,6 +67,27 @@ const goToProducts = () => {
         <router-link to="/products" class="nav-link">Products</router-link>
         <router-link to="/orders" class="nav-link">Orders</router-link>
         <router-link to="/cart" class="nav-link cart-link">Cart<span v-if="totalItems > 0" class="cart-count">{{ totalItems }}</span></router-link>
+        <div ref="accountMenuRef" class="account-menu">
+          <button
+            type="button"
+            class="account-btn"
+            aria-label="Account menu"
+            @click.stop="toggleAccountMenu"
+          >
+            Account
+          </button>
+
+          <div v-if="accountMenuOpen" class="account-dropdown">
+            <template v-if="currentUser">
+              <router-link to="/profile" class="account-link" @click="closeAccountMenu">Profile</router-link>
+              <button type="button" class="account-link account-action" @click="handleLogout">Logout</button>
+            </template>
+            <template v-else>
+              <router-link to="/login" class="account-link" @click="closeAccountMenu">Login</router-link>
+              <router-link to="/register" class="account-link" @click="closeAccountMenu">Register</router-link>
+            </template>
+          </div>
+        </div>
       </nav>
     </div>
   </header>
@@ -58,11 +121,25 @@ const goToProducts = () => {
   white-space: nowrap;
 }
 
+nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .nav-link {
-  margin-right: 20px;
+  margin-right: 0;
   color: white;
   text-decoration: none;
   font-size: 16px;
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 .search-container {
@@ -80,12 +157,67 @@ const goToProducts = () => {
   min-height: 36px;
 }
 
-.nav-link:last-child {
-  margin-right: 0;
-}
-
 .cart-link {
   position: relative;
+}
+
+.account-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.account-btn {
+  border: none;
+  background-color: transparent;
+  color: white;
+  border-radius: 6px;
+  min-height: auto;
+  padding: 6px 10px;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color 0.2s;
+}
+
+.account-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.account-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 130px;
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.account-link {
+  display: block;
+  width: 100%;
+  border: none;
+  background-color: white;
+  text-align: left;
+  padding: 10px 12px;
+  color: #1f2937;
+  text-decoration: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.account-link:hover {
+  background-color: #f3f4f6;
+}
+
+.account-action {
+  font-family: inherit;
 }
 
 .cart-count {
