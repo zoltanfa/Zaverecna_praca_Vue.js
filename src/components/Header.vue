@@ -2,23 +2,21 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useCart } from '@/composables/useCart.js'
 import { useSearch } from '@/composables/useSearch.js'
+import { useAuth } from '@/composables/useAuth.js'
 import { useRouter } from 'vue-router'
 
 const { totalItems } = useCart()
 const { searchTerm } = useSearch()
+const { currentUser, logout } = useAuth()
 const router = useRouter()
 const accountMenuOpen = ref(false)
 const accountMenuRef = ref(null)
-const currentUser = ref(null)
-const CURRENT_USER_KEY = 'currentUser'
 
 const goToProducts = () => {
   router.push('/products')
 }
 
 const toggleAccountMenu = () => {
-  const savedUser = localStorage.getItem(CURRENT_USER_KEY)
-  currentUser.value = savedUser ? JSON.parse(savedUser) : null
   accountMenuOpen.value = !accountMenuOpen.value
 }
 
@@ -36,16 +34,13 @@ const handleClickOutside = (event) => {
   }
 }
 
-const handleLogout = () => {
-  localStorage.removeItem(CURRENT_USER_KEY)
-  currentUser.value = null
+const handleLogout = async () => {
+  await logout()
   closeAccountMenu()
   router.push('/')
 }
 
 onMounted(() => {
-  const savedUser = localStorage.getItem(CURRENT_USER_KEY)
-  currentUser.value = savedUser ? JSON.parse(savedUser) : null
   document.addEventListener('click', handleClickOutside)
 })
 

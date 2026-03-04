@@ -1,11 +1,19 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { updateProfile } from 'firebase/auth'
+import { auth } from '@/firebase.js'
+import { useAuth } from '@/composables/useAuth.js'
 
 const router = useRouter()
-
-const USERS_STORAGE_KEY = 'users'
-const CURRENT_USER_KEY = 'currentUser'
+const {
+  currentUser,
+  waitForAuthInit,
+  getUserProfile,
+  saveUserProfile,
+  changeUserEmail,
+  changeUserPassword
+} = useAuth()
 
 const isSubmitting = ref(false)
 const errorMessage = ref('')
@@ -29,8 +37,6 @@ const passwordData = ref({
 })
 const showPasswordSection = ref(false)
 
-const currentUserId = ref(null)
-
 const togglePasswordSection = () => {
   showPasswordSection.value = !showPasswordSection.value
 
@@ -41,40 +47,28 @@ const togglePasswordSection = () => {
   }
 }
 
-const loadProfile = () => {
-  const savedCurrentUser = localStorage.getItem(CURRENT_USER_KEY)
-  if (!savedCurrentUser) {
+const loadProfile = async () => {
+  await waitForAuthInit()
+
+  if (!currentUser.value) {
     router.push('/login')
     return
   }
 
-  const currentUser = JSON.parse(savedCurrentUser)
-  currentUserId.value = currentUser.id
+  const firebaseUser = currentUser.value
+  const profile = await getUserProfile(firebaseUser.uid)
 
-  const savedUsers = localStorage.getItem(USERS_STORAGE_KEY)
-  const users = savedUsers ? JSON.parse(savedUsers) : []
-  const fullUser = users.find(user => user.id === currentUser.id || user.email === currentUser.email)
+  const fallbackName = firebaseUser.displayName || ''
+  const [firstName = '', ...lastNameParts] = fallbackName.split(' ')
 
-  if (!fullUser) {
-    formData.value.firstName = currentUser.name?.split(' ')[0] || ''
-    formData.value.lastName = currentUser.name?.split(' ').slice(1).join(' ') || ''
-    formData.value.email = currentUser.email || ''
-    formData.value.phone = currentUser.phone || ''
-    formData.value.address = currentUser.address || ''
-    formData.value.city = currentUser.city || ''
-    formData.value.postalCode = currentUser.postalCode || ''
-    formData.value.country = currentUser.country || ''
-    return
-  }
-
-  formData.value.firstName = fullUser.firstName || ''
-  formData.value.lastName = fullUser.lastName || ''
-  formData.value.email = fullUser.email || ''
-  formData.value.phone = fullUser.phone || ''
-  formData.value.address = fullUser.address || ''
-  formData.value.city = fullUser.city || ''
-  formData.value.postalCode = fullUser.postalCode || ''
-  formData.value.country = fullUser.country || ''
+  formData.value.firstName = profile?.firstName || firstName
+  formData.value.lastName = profile?.lastName || lastNameParts.join(' ')
+  formData.value.email = profile?.email || firebaseUser.email || ''
+  formData.value.phone = profile?.phone || ''
+  formData.value.address = profile?.address || ''
+  formData.value.city = profile?.city || ''
+  formData.value.postalCode = profile?.postalCode || ''
+  formData.value.country = profile?.country || ''
 }
 
 const saveProfile = async () => {
@@ -109,38 +103,23 @@ const saveProfile = async () => {
 
   isSubmitting.value = true
 
-  await new Promise(resolve => setTimeout(resolve, 300))
-
   try {
-    const savedUsers = localStorage.getItem(USERS_STORAGE_KEY)
-    const users = savedUsers ? JSON.parse(savedUsers) : []
-
-    const duplicateEmail = users.some(
-      user => user.email.toLowerCase() === email.toLowerCase() && user.id !== currentUserId.value
-    )
-
-    if (duplicateEmail) {
-      errorMessage.value = 'This email is already in use.'
-      return
-    }
-
-    const userIndex = users.findIndex(user => user.id === currentUserId.value)
-
     if (wantsPasswordChange) {
-      if (userIndex === -1) {
-        errorMessage.value = 'Unable to change password for this account.'
-        return
-      }
-
-      if (users[userIndex].password !== currentPassword) {
-        errorMessage.value = 'Current password is incorrect.'
-        return
-      }
+      await changeUserPassword({ currentPassword, newPassword })
     }
 
-    if (userIndex !== -1) {
-      users[userIndex] = {
-        ...users[userIndex],
+    if (auth.currentUser && auth.currentUser.email !== email) {
+      await changeUserEmail(email)
+    }
+
+    if (auth.currentUser) {
+      await updateProfile(auth.currentUser, {
+        displayName: `${firstName} ${lastName}`.trim()
+      })
+    }
+
+    if (currentUser.value) {
+      await saveUserProfile(currentUser.value.uid, {
         firstName,
         lastName,
         email,
@@ -148,29 +127,9 @@ const saveProfile = async () => {
         address,
         city,
         postalCode,
-        country,
-        ...(wantsPasswordChange ? { password: newPassword } : {})
-      }
-      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
-    }
-
-    const savedCurrentUser = localStorage.getItem(CURRENT_USER_KEY)
-    const currentUser = savedCurrentUser ? JSON.parse(savedCurrentUser) : {}
-
-    localStorage.setItem(
-      CURRENT_USER_KEY,
-      JSON.stringify({
-        ...currentUser,
-        id: currentUserId.value,
-        name: `${firstName} ${lastName}`.trim(),
-        email,
-        phone,
-        address,
-        city,
-        postalCode,
         country
       })
-    )
+    }
 
     if (wantsPasswordChange) {
       passwordData.value.currentPassword = ''
@@ -180,7 +139,15 @@ const saveProfile = async () => {
 
     successMessage.value = 'Profile updated successfully.'
   } catch (error) {
-    errorMessage.value = 'Unable to update profile. Please try again.'
+    if (error?.code === 'auth/email-already-in-use') {
+      errorMessage.value = 'This email is already in use.'
+    } else if (error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential') {
+      errorMessage.value = 'Current password is incorrect.'
+    } else if (error?.code === 'auth/requires-recent-login') {
+      errorMessage.value = 'Please log in again before changing sensitive account details.'
+    } else {
+      errorMessage.value = 'Unable to update profile. Please try again.'
+    }
   } finally {
     isSubmitting.value = false
   }

@@ -1,16 +1,23 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import ProductCard from '@/components/ProductCard.vue'
-import { products } from '@/data/products.js'
+import { products, loadProductsFromDatabase } from '@/data/products.js'
 import { useSearch } from '@/composables/useSearch.js'
 
-const { searchTerm } = useSearch()
+const { searchTerm, matchesFullTextSearch, getSearchScore } = useSearch()
 const featuredProducts = computed(() => {
   let featured = products.filter(product => [1, 2, 6, 11, 16, 21].includes(product.id))
+
   if (searchTerm.value) {
-    featured = featured.filter(product => product.name.toLowerCase().includes(searchTerm.value.toLowerCase()))
+    featured = featured.filter(product => matchesFullTextSearch(product, searchTerm.value))
+    featured = [...featured].sort((a, b) => getSearchScore(b, searchTerm.value) - getSearchScore(a, searchTerm.value))
   }
+
   return featured
+})
+
+onMounted(() => {
+  loadProductsFromDatabase()
 })
 </script>
 

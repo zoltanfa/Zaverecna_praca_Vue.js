@@ -1,15 +1,14 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuth } from '@/composables/useAuth.js'
 
 const router = useRouter()
 const email = ref('')
 const password = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
-
-const USERS_STORAGE_KEY = 'users'
-const CURRENT_USER_KEY = 'currentUser'
+const { loginWithEmail } = useAuth()
 
 const handleLogin = async () => {
   errorMessage.value = ''
@@ -21,34 +20,17 @@ const handleLogin = async () => {
 
   isSubmitting.value = true
 
-  await new Promise(resolve => setTimeout(resolve, 300))
-
   try {
-    const savedUsers = localStorage.getItem(USERS_STORAGE_KEY)
-    const users = savedUsers ? JSON.parse(savedUsers) : []
-
-    const matchedUser = users.find(
-      user => user.email.toLowerCase() === email.value.toLowerCase() && user.password === password.value
-    )
-
-    if (!matchedUser) {
-      errorMessage.value = 'Invalid email or password.'
-      return
-    }
-
-    localStorage.setItem(
-      CURRENT_USER_KEY,
-      JSON.stringify({
-        id: matchedUser.id,
-        name: `${matchedUser.firstName} ${matchedUser.lastName}`.trim(),
-        email: matchedUser.email,
-        loggedInAt: new Date().toISOString()
-      })
-    )
+    await loginWithEmail({
+      email: email.value,
+      password: password.value
+    })
 
     router.push('/')
   } catch (error) {
-    errorMessage.value = 'Unable to log in. Please try again.'
+    errorMessage.value = error?.code === 'auth/invalid-credential'
+      ? 'Invalid email or password.'
+      : 'Unable to log in. Please try again.'
   } finally {
     isSubmitting.value = false
   }

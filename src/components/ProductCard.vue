@@ -1,11 +1,14 @@
 <script setup>
+import { computed } from 'vue'
 import { useCart } from '@/composables/useCart.js'
 
 const { product } = defineProps({
   product: Object
 })
 
-const { addToCart } = useCart()
+const { addToCart, isProductAvailable } = useCart()
+const isAvailable = computed(() => isProductAvailable(product))
+
 const handleAddToCart = () => {
   addToCart(product)
 }
@@ -20,7 +23,12 @@ const handleAddToCart = () => {
     </router-link>
     <div class="product-footer">
       <p class="product-price">{{ product.price.toFixed(2) }} €</p>
-      <button @click="handleAddToCart" class="add-to-cart-btn">🛒 Add to Cart</button>
+      <p class="stock-status" :class="{ 'out-of-stock': !isAvailable }">
+        {{ isAvailable ? 'In stock' : 'Out of stock' }}
+      </p>
+      <button @click="handleAddToCart" class="add-to-cart-btn" :disabled="!isAvailable">
+        {{ isAvailable ? '🛒 Add to Cart' : 'Unavailable' }}
+      </button>
     </div>
   </div>
 </template>
@@ -50,6 +58,17 @@ const handleAddToCart = () => {
 
 .product-price {
   color: #16a34a;
+}
+
+.stock-status {
+  margin: 0 0 8px 0;
+  color: #15803d;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stock-status.out-of-stock {
+  color: #dc2626;
 }
 
 .product-link {
@@ -83,6 +102,11 @@ const handleAddToCart = () => {
 
 .add-to-cart-btn:active {
   background-color: #afb0b3;
+}
+
+.add-to-cart-btn:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {

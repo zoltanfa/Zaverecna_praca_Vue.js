@@ -1,4 +1,5 @@
 import { ref, computed, watch } from 'vue'
+import { products } from '@/data/products.js'
 
 const CART_STORAGE_KEY = 'cart'
 
@@ -14,6 +15,29 @@ const loadCartFromStorage = () => {
 
 const cart = ref(loadCartFromStorage())
 
+const getLiveProductById = (productId) => {
+  return products.find(product => String(product.id) === String(productId)) || null
+}
+
+const getAvailableUnits = (product) => {
+  const liveProduct = getLiveProductById(product?.id)
+  const sourceProduct = liveProduct || product
+
+  if (typeof sourceProduct?.stock === 'number') {
+    return Math.max(0, sourceProduct.stock)
+  }
+
+  if (typeof sourceProduct?.inStock === 'boolean') {
+    return sourceProduct.inStock ? Number.POSITIVE_INFINITY : 0
+  }
+
+  return Number.POSITIVE_INFINITY
+}
+
+const isProductAvailable = (product) => {
+  return getAvailableUnits(product) > 0
+}
+
 watch(
   () => cart.value,
   (newCart) => {
@@ -27,8 +51,20 @@ watch(
 )
 
 const addToCart = (product) => {
+  if (!product || !isProductAvailable(product)) {
+    return false
+  }
+
   const existingItemIndex = cart.value.findIndex(item => item.id === product.id)
+
   if (existingItemIndex > -1) {
+    const currentQuantity = cart.value[existingItemIndex].quantity
+    const maxAvailableUnits = getAvailableUnits(product)
+
+    if (currentQuantity >= maxAvailableUnits) {
+      return false
+    }
+
     cart.value = cart.value.map((item, index) =>
       index === existingItemIndex
         ? { ...item, quantity: item.quantity + 1 }
@@ -40,6 +76,8 @@ const addToCart = (product) => {
       quantity: 1
     }]
   }
+
+  return true
 }
 
 const removeFromCart = (productId) => {
@@ -51,9 +89,23 @@ const updateQuantity = (productId, quantity) => {
     removeFromCart(productId)
     return
   }
+
+  const itemToUpdate = cart.value.find(item => item.id === productId)
+  if (!itemToUpdate) {
+    return
+  }
+
+  const maxAvailableUnits = getAvailableUnits(itemToUpdate)
+  const nextQuantity = Math.min(quantity, maxAvailableUnits)
+
+  if (nextQuantity <= 0) {
+    removeFromCart(productId)
+    return
+  }
+
   cart.value = cart.value.map(item => 
     item.id === productId 
-      ? { ...item, quantity }
+      ? { ...item, quantity: nextQuantity }
       : item
   )
 }
@@ -78,6 +130,8 @@ export function useCart() {
     updateQuantity,
     clearCart,
     totalItems,
-    totalPrice
+    totalPrice,
+    isProductAvailable,
+    getAvailableUnits
   }
 }

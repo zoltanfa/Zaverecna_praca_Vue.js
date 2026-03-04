@@ -1,4 +1,9 @@
-export const products = [
+import { reactive } from 'vue'
+import { collection, getDocs, orderBy, query } from 'firebase/firestore'
+import { db } from '@/firebase.js'
+
+
+export const fallbackProducts = [
   {
     id: 1,
     name: 'Intel Core i7-14700K',
@@ -360,3 +365,54 @@ export const products = [
     description: 'PC Case - mATX (Micro ATX) and mITX (Mini ITX), 2x 2,5" slot(s), 2x 2.5"/3.5" slot(s), USB 2.0, USB 3.2 Gen 1, 3.5mm jack (headphones) and 3.5mm jack (microphone), 2x120mm, max. heat sink height: 161mm, max. graphics card length: 330mm, without power supply, side panel made of tempered glass'
   }
 ]
+
+export const products = reactive([...fallbackProducts])
+
+const normalizeProductId = (rawId) => {
+  const numericId = Number(rawId)
+  return Number.isNaN(numericId) ? rawId : numericId
+}
+
+const mapProductFromDoc = (docSnapshot) => {
+  const data = docSnapshot.data()
+  const rawId = data.id ?? docSnapshot.id
+
+  return {
+    ...data,
+    id: normalizeProductId(rawId)
+  }
+}
+
+let loadProductsPromise = null
+
+export const loadProductsFromDatabase = async (forceRefresh = false) => {
+  if (forceRefresh) {
+    loadProductsPromise = null
+  }
+
+  if (loadProductsPromise) {
+    return loadProductsPromise
+  }
+
+  loadProductsPromise = (async () => {
+    try {
+      const productsQuery = query(
+        collection(db, 'products'),
+        orderBy('id', 'asc')
+      )
+
+      const snapshot = await getDocs(productsQuery)
+
+      if (snapshot.empty) {
+        return
+      }
+
+      const databaseProducts = snapshot.docs.map(mapProductFromDoc)
+      products.splice(0, products.length, ...databaseProducts)
+    } catch (error) {
+      console.error('Failed to load products from Firestore:', error)
+    }
+  })()
+
+  return loadProductsPromise
+}

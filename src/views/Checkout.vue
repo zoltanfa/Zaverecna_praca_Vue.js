@@ -1,10 +1,15 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { addDoc, collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { useCart } from '@/composables/useCart.js'
+import { db } from '@/firebase.js'
+import { loadProductsFromDatabase } from '@/data/products.js'
+import { useAuth } from '@/composables/useAuth.js'
 
 const router = useRouter()
 const { cart, totalPrice, clearCart } = useCart()
+const { currentUser, waitForAuthInit, getUserProfile } = useAuth()
 
 const pickupPoints = [
   'Z-BOX Bratislava Central',
@@ -33,9 +38,9 @@ const formData = ref({
 
 const submitted = ref(false)
 const isProcessing = ref(false)
+const checkoutError = ref('')
 const checkoutForm = ref(null)
 const currentStep = ref(1)
-const ORDER_STORAGE_KEY = 'orderHistory'
 
 const getDeliveryLabel = () => (formData.value.deliveryMethod === 'home'
   ? 'Home Delivery'
@@ -51,6 +56,87 @@ const getPaymentLabel = () => (formData.value.paymentMethod === 'card'
       ? 'Bank Transfer'
       : 'Google Pay')
 
+const isValidPhoneNumber = (value) => {
+  return /^\+?[0-9\s()-]{7,20}$/.test(String(value || '').trim())
+}
+
+const isCardExpired = (expiryValue) => {
+  const expiryMatch = /^(0[1-9]|1[0-2])\/(\d{2})$/.exec(expiryValue)
+  if (!expiryMatch) {
+    return true
+  }
+
+  const expiryMonth = Number(expiryMatch[1])
+  const expiryYear = 2000 + Number(expiryMatch[2])
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  return expiryYear < currentYear || (expiryYear === currentYear && expiryMonth < currentMonth)
+}
+
+const validateCardFields = () => {
+  const normalizedCardNumber = String(formData.value.cardNumber || '').replace(/\s+/g, '')
+  if (!/^\d{16}$/.test(normalizedCardNumber)) {
+    checkoutError.value = 'Card number must contain exactly 16 digits.'
+    return false
+  }
+
+  if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(String(formData.value.expiryDate || '').trim())) {
+    checkoutError.value = 'Expiry date must be in MM/YY format.'
+    return false
+  }
+
+  if (isCardExpired(String(formData.value.expiryDate || '').trim())) {
+    checkoutError.value = 'Card is expired.'
+    return false
+  }
+
+  if (!/^\d{3,4}$/.test(String(formData.value.cvv || '').trim())) {
+    checkoutError.value = 'CVV must be 3 or 4 digits.'
+    return false
+  }
+
+  return true
+}
+
+const validateCheckoutBeforeSubmit = () => {
+  if (!isValidPhoneNumber(formData.value.phone)) {
+    checkoutError.value = 'Enter a valid phone number.'
+    return false
+  }
+
+  if (formData.value.paymentMethod === 'card') {
+    return validateCardFields()
+  }
+
+  return true
+}
+
+const validateCurrentStep = () => {
+  checkoutError.value = ''
+
+  if (checkoutForm.value && !checkoutForm.value.reportValidity()) {
+    return false
+  }
+
+  if (currentStep.value === 1 && !isValidPhoneNumber(formData.value.phone)) {
+    checkoutError.value = 'Enter a valid phone number.'
+    return false
+  }
+
+  if (currentStep.value === 2 && formData.value.deliveryMethod === 'pickupPoint' && !formData.value.pickupPoint) {
+    checkoutError.value = 'Select a pickup point.'
+    return false
+  }
+
+  if (currentStep.value === 3 && formData.value.paymentMethod === 'card' && !validateCardFields()) {
+    return false
+  }
+
+  return true
+}
+
 watch(
   () => formData.value.deliveryMethod,
   (deliveryMethod) => {
@@ -64,32 +150,18 @@ watch(
   }
 )
 
-const loadOrders = () => {
-  try {
-    const savedOrders = localStorage.getItem(ORDER_STORAGE_KEY)
-    return savedOrders ? JSON.parse(savedOrders) : []
-  } catch (error) {
-    console.error('Failed to load order history:', error)
-    return []
+const saveOrder = async ({ validatedItems, recomputedTotal }) => {
+  await waitForAuthInit()
+  if (!currentUser.value) {
+    throw new Error('You must be logged in to place an order.')
   }
-}
 
-const saveOrders = (orders) => {
-  try {
-    localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(orders))
-  } catch (error) {
-    console.error('Failed to save order history:', error)
-  }
-}
-
-const saveOrder = () => {
-  const orders = loadOrders()
   const deliveryLabel = getDeliveryLabel()
   const paymentLabel = getPaymentLabel()
 
   const order = {
-    id: Date.now(),
-    date: new Date().toISOString(),
+    userId: currentUser.value.uid,
+    createdAt: serverTimestamp(),
     status: 'Created',
     customerName: `${formData.value.firstName} ${formData.value.lastName}`.trim(),
     email: formData.value.email,
@@ -99,32 +171,87 @@ const saveOrder = () => {
     pickupPoint: formData.value.deliveryMethod === 'pickupPoint' ? formData.value.pickupPoint : null,
     paymentMethod: formData.value.paymentMethod,
     paymentLabel,
-    items: cart.value.map(item => ({
-      id: item.id,
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity
-    })),
-    total: totalPrice.value
+    items: validatedItems,
+    total: recomputedTotal
   }
 
-  orders.unshift(order)
-  saveOrders(orders)
+  await addDoc(collection(db, 'orders'), order)
+}
+
+const reserveStockForOrder = async () => {
+  return runTransaction(db, async (transaction) => {
+    const validatedItems = []
+    let recomputedTotal = 0
+
+    for (const cartItem of cart.value) {
+      const productRef = doc(db, 'products', String(cartItem.id))
+      const productSnapshot = await transaction.get(productRef)
+
+      if (!productSnapshot.exists()) {
+        throw new Error(`${cartItem.name} is no longer available.`)
+      }
+
+      const productData = productSnapshot.data()
+      const currentStock = productData?.stock
+      const currentPrice = Number(productData?.price)
+
+      if (Number.isNaN(currentPrice)) {
+        throw new Error(`Product price is invalid for ${cartItem.name}.`)
+      }
+
+      validatedItems.push({
+        id: cartItem.id,
+        name: cartItem.name,
+        price: currentPrice,
+        quantity: cartItem.quantity
+      })
+      recomputedTotal += currentPrice * cartItem.quantity
+
+      if (typeof currentStock === 'number') {
+        if (currentStock < cartItem.quantity) {
+          throw new Error(`Not enough stock for ${cartItem.name}. Available: ${currentStock}.`)
+        }
+
+        transaction.update(productRef, {
+          stock: currentStock - cartItem.quantity
+        })
+      }
+    }
+
+    return {
+      validatedItems,
+      recomputedTotal: Number(recomputedTotal.toFixed(2))
+    }
+  })
 }
 
 const handleSubmit = async () => {
+  checkoutError.value = ''
+
+  if (!validateCheckoutBeforeSubmit()) {
+    return
+  }
+
   isProcessing.value = true
 
   await new Promise(resolve => setTimeout(resolve, 2000))
 
-  saveOrder()
-  submitted.value = true
-  isProcessing.value = false
+  try {
+    const checkoutValidation = await reserveStockForOrder()
+    await saveOrder(checkoutValidation)
+    await loadProductsFromDatabase(true)
+    submitted.value = true
+    isProcessing.value = false
 
-  setTimeout(() => {
-    clearCart()
-    router.push('/')
-  }, 2000)
+    setTimeout(() => {
+      clearCart()
+      router.push('/')
+    }, 2000)
+  } catch (error) {
+    console.error('Failed to place order:', error)
+    checkoutError.value = error?.message || 'Failed to place order. Please try again.'
+    isProcessing.value = false
+  }
 }
 
 const goBack = () => {
@@ -132,7 +259,7 @@ const goBack = () => {
 }
 
 const nextStep = () => {
-  if (checkoutForm.value && !checkoutForm.value.reportValidity()) {
+  if (!validateCurrentStep()) {
     return
   }
 
@@ -150,6 +277,31 @@ const previousStep = () => {
 const editOrder = () => {
   currentStep.value = 3
 }
+
+const prefillCheckoutFromProfile = async () => {
+  await waitForAuthInit()
+
+  if (!currentUser.value) {
+    return
+  }
+
+  const firebaseUser = currentUser.value
+  const profile = await getUserProfile(firebaseUser.uid)
+  const [firstName = '', ...lastNameParts] = String(firebaseUser.displayName || '').split(' ')
+
+  formData.value.firstName = profile?.firstName || firstName
+  formData.value.lastName = profile?.lastName || lastNameParts.join(' ')
+  formData.value.email = profile?.email || firebaseUser.email || ''
+  formData.value.phone = profile?.phone || ''
+  formData.value.address = profile?.address || ''
+  formData.value.city = profile?.city || ''
+  formData.value.postalCode = profile?.postalCode || ''
+  formData.value.country = profile?.country || ''
+}
+
+onMounted(() => {
+  prefillCheckoutFromProfile()
+})
 </script>
 
 
@@ -163,6 +315,8 @@ const editOrder = () => {
     </div>
 
     <div v-else class="checkout-container">
+      <p v-if="checkoutError" class="checkout-error">{{ checkoutError }}</p>
+
       <div class="step-indicator" aria-label="Checkout steps">
         <div class="step-item" :class="{ active: currentStep === 1, completed: currentStep > 1 }">
           <span class="step-number">1</span>
@@ -226,6 +380,8 @@ const editOrder = () => {
                   id="phone"
                   v-model="formData.phone"
                   type="tel"
+                  pattern="^\+?[0-9\s()-]{7,20}$"
+                  title="Enter a valid phone number"
                   required
                   :disabled="isProcessing"
                 />
@@ -577,6 +733,12 @@ const editOrder = () => {
   display: flex;
   align-items: center;
   margin-bottom: 24px;
+}
+
+.checkout-error {
+  margin: 0 0 16px;
+  color: #dc2626;
+  font-weight: 600;
 }
 
 .step-item {

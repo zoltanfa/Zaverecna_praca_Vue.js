@@ -1,14 +1,16 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { products } from '@/data/products.js'
+import { products, loadProductsFromDatabase } from '@/data/products.js'
 import { useCart } from '@/composables/useCart.js'
 
 const route = useRoute()
 const router = useRouter()
-const product = computed(() => products.find(p => p.id === parseInt(route.params.id)))
+const product = computed(() => products.find(p => String(p.id) === String(route.params.id)))
 
-const { addToCart } = useCart()
+const { addToCart, isProductAvailable } = useCart()
+const isAvailable = computed(() => (product.value ? isProductAvailable(product.value) : false))
+
 const handleAddToCart = () => {
   addToCart(product.value)
 }
@@ -16,6 +18,10 @@ const handleAddToCart = () => {
 const showSameCategory = () => {
   router.push(`/products?category=${product.value.category}`)
 }
+
+onMounted(() => {
+  loadProductsFromDatabase()
+})
 </script>
 
 
@@ -26,8 +32,13 @@ const showSameCategory = () => {
         <div class="product-detail-info">
           <h1 class="product-detail-title">{{ product.name }}</h1>
           <p class="product-detail-price">{{ product.price.toFixed(2) }} €</p>
+          <p class="stock-status" :class="{ 'out-of-stock': !isAvailable }">
+            {{ isAvailable ? 'In stock' : 'Out of stock' }}
+          </p>
           <p class="product-detail-description">{{ product.description }}</p>
-          <button @click="handleAddToCart" class="add-to-cart-btn">🛒 Add to Cart</button>
+          <button @click="handleAddToCart" class="add-to-cart-btn" :disabled="!isAvailable">
+            {{ isAvailable ? '🛒 Add to Cart' : 'Unavailable' }}
+          </button>
           <button @click="showSameCategory" class="category-btn">Show {{ product.category }} Products</button>
         </div>
       </div>
@@ -91,6 +102,17 @@ const showSameCategory = () => {
   margin-bottom: 16px;
 }
 
+.stock-status {
+  margin-bottom: 12px;
+  color: #15803d;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stock-status.out-of-stock {
+  color: #dc2626;
+}
+
 .add-to-cart-btn {
   display: block;
   width: 250px;
@@ -111,6 +133,11 @@ const showSameCategory = () => {
 
 .add-to-cart-btn:active {
   background-color: #afb0b3;
+}
+
+.add-to-cart-btn:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
 }
 
 .category-btn {

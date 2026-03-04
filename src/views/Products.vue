@@ -2,11 +2,11 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ProductCard from '@/components/ProductCard.vue'
-import { products } from '@/data/products.js'
+import { products, loadProductsFromDatabase } from '@/data/products.js'
 import { useSearch } from '@/composables/useSearch.js'
 
 const route = useRoute()
-const { searchTerm } = useSearch()
+const { searchTerm, matchesFullTextSearch, getSearchScore } = useSearch()
 const selectedCategory = ref('')
 const selectedSubcategories = ref([])
 const selectedBrands = ref([])
@@ -19,10 +19,24 @@ const selectedCaseFormFactors = ref([])
 const selectedSort = ref('oldest')
 const currentPage = ref(1)
 const productsPerPage = 8
-const minAvailablePrice = Math.floor(Math.min(...products.map(product => product.price)))
-const maxAvailablePrice = Math.ceil(Math.max(...products.map(product => product.price)))
-const selectedMinPrice = ref(minAvailablePrice)
-const selectedMaxPrice = ref(maxAvailablePrice)
+const minAvailablePrice = computed(() => {
+  if (products.length === 0) {
+    return 0
+  }
+
+  return Math.floor(Math.min(...products.map(product => product.price)))
+})
+
+const maxAvailablePrice = computed(() => {
+  if (products.length === 0) {
+    return 0
+  }
+
+  return Math.ceil(Math.max(...products.map(product => product.price)))
+})
+
+const selectedMinPrice = ref(0)
+const selectedMaxPrice = ref(0)
 const availableCategories = [
   'CPU',
   'GPU', 
@@ -243,7 +257,25 @@ watch(selectedMaxPrice, (price) => {
   }
 })
 
+watch([minAvailablePrice, maxAvailablePrice], ([minPrice, maxPrice]) => {
+  if (selectedMinPrice.value === 0 && selectedMaxPrice.value === 0) {
+    selectedMinPrice.value = minPrice
+    selectedMaxPrice.value = maxPrice
+    return
+  }
+
+  if (selectedMinPrice.value < minPrice || selectedMinPrice.value > maxPrice) {
+    selectedMinPrice.value = minPrice
+  }
+
+  if (selectedMaxPrice.value > maxPrice || selectedMaxPrice.value < minPrice) {
+    selectedMaxPrice.value = maxPrice
+  }
+}, { immediate: true })
+
 onMounted(() => {
+  loadProductsFromDatabase()
+
   if (route.query.category) {
     selectedCategory.value = route.query.category
   }
@@ -317,7 +349,7 @@ const filteredProducts = computed(() => {
     })
   }
   if (searchTerm.value) {
-    filtered = filtered.filter(product => product.name.toLowerCase().includes(searchTerm.value.toLowerCase()))
+    filtered = filtered.filter(product => matchesFullTextSearch(product, searchTerm.value))
   }
   filtered = filtered.filter(product =>
     product.price >= selectedMinPrice.value && product.price <= selectedMaxPrice.value
@@ -327,6 +359,36 @@ const filteredProducts = computed(() => {
 
 const sortedProducts = computed(() => {
   const sorted = [...filteredProducts.value]
+  const hasSearch = searchTerm.value.trim().length > 0
+
+  if (hasSearch) {
+    const scoredProducts = sorted.map(product => ({
+      product,
+      score: getSearchScore(product, searchTerm.value)
+    }))
+
+    scoredProducts.sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score
+      }
+
+      if (selectedSort.value === 'price-asc') {
+        return a.product.price - b.product.price
+      }
+
+      if (selectedSort.value === 'price-desc') {
+        return b.product.price - a.product.price
+      }
+
+      if (selectedSort.value === 'newest') {
+        return b.product.id - a.product.id
+      }
+
+      return a.product.id - b.product.id
+    })
+
+    return scoredProducts.map(item => item.product)
+  }
 
   if (selectedSort.value === 'newest') {
     return sorted.reverse()

@@ -1,7 +1,43 @@
 <script setup>
+import { computed } from 'vue'
 import { useCart } from '@/composables/useCart.js'
 
-const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice } = useCart()
+const {
+  cart,
+  removeFromCart,
+  updateQuantity,
+  clearCart,
+  totalItems,
+  totalPrice,
+  isProductAvailable,
+  getAvailableUnits
+} = useCart()
+
+const getStockLabel = (item) => {
+  if (!isProductAvailable(item)) {
+    return 'Out of stock'
+  }
+
+  const availableUnits = getAvailableUnits(item)
+  if (!Number.isFinite(availableUnits)) {
+    return 'In stock'
+  }
+
+  return `${availableUnits} in stock`
+}
+
+const isAtStockLimit = (item) => {
+  const availableUnits = getAvailableUnits(item)
+  if (!Number.isFinite(availableUnits)) {
+    return false
+  }
+
+  return item.quantity >= availableUnits
+}
+
+const hasUnavailableItems = computed(() => {
+  return cart.value.some(item => !isProductAvailable(item))
+})
 </script>
 
 
@@ -21,12 +57,19 @@ const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice 
           <div class="cart-item-details">
             <h3 class="cart-item-title">{{ item.name }}</h3>
             <p class="cart-item-price">{{ item.price.toFixed(2) }} €</p>
+            <p class="stock-info" :class="{ 'out-of-stock': !isProductAvailable(item) }">{{ getStockLabel(item) }}</p>
           </div>
           <div class="cart-item-controls">
             <div class="quantity-controls">
               <button @click="updateQuantity(item.id, item.quantity - 1)" class="quantity-btn">-</button>
               <span class="quantity">{{ item.quantity }}</span>
-              <button @click="updateQuantity(item.id, item.quantity + 1)" class="quantity-btn">+</button>
+              <button
+                @click="updateQuantity(item.id, item.quantity + 1)"
+                class="quantity-btn"
+                :disabled="!isProductAvailable(item) || isAtStockLimit(item)"
+              >
+                +
+              </button>
             </div>
             <p class="item-total">{{ (item.price * item.quantity).toFixed(2) }} €</p>
             <button @click="removeFromCart(item.id)" class="remove-btn">Remove</button>
@@ -45,8 +88,13 @@ const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice 
         </div>
         <div class="cart-actions">
           <button @click="clearCart" class="clear-cart-btn">Clear Cart</button>
-          <router-link to="/checkout" class="checkout-btn">Proceed to Checkout</router-link>
+          <router-link :to="hasUnavailableItems ? '/cart' : '/checkout'" class="checkout-btn" :class="{ disabled: hasUnavailableItems }">
+            Proceed to Checkout
+          </router-link>
         </div>
+        <p v-if="hasUnavailableItems" class="checkout-warning">
+          Some items are out of stock. Remove them before checkout.
+        </p>
       </div>
     </div>
   </main>
@@ -136,6 +184,17 @@ const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice 
   font-weight: 500;
 }
 
+.stock-info {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #15803d;
+}
+
+.stock-info.out-of-stock {
+  color: #dc2626;
+}
+
 .cart-item-controls {
   display: flex;
   align-items: center;
@@ -164,6 +223,11 @@ const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice 
 
 .quantity-btn:hover {
   background-color: #f3f4f6;
+}
+
+.quantity-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .quantity {
@@ -257,6 +321,17 @@ const { cart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice 
 
 .checkout-btn:hover {
   background-color: #15803d;
+}
+
+.checkout-btn.disabled {
+  background-color: #9ca3af;
+  pointer-events: none;
+}
+
+.checkout-warning {
+  margin-top: 12px;
+  color: #dc2626;
+  font-size: 14px;
 }
 
 @media (max-width: 768px) {

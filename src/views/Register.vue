@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuth } from '@/composables/useAuth.js'
 
 const router = useRouter()
 const isSubmitting = ref(false)
 const errorMessage = ref('')
+const { registerWithEmail } = useAuth()
 
 const formData = ref({
   firstName: '',
@@ -13,8 +15,6 @@ const formData = ref({
   password: '',
   confirmPassword: ''
 })
-
-const USERS_STORAGE_KEY = 'users'
 
 const handleRegister = async () => {
   errorMessage.value = ''
@@ -31,33 +31,26 @@ const handleRegister = async () => {
     return
   }
 
+  if (password.length < 6) {
+    errorMessage.value = 'Password must have at least 6 characters.'
+    return
+  }
+
   isSubmitting.value = true
 
-  await new Promise(resolve => setTimeout(resolve, 300))
-
   try {
-    const savedUsers = localStorage.getItem(USERS_STORAGE_KEY)
-    const users = savedUsers ? JSON.parse(savedUsers) : []
-
-    const userExists = users.some(user => user.email.toLowerCase() === email.toLowerCase())
-    if (userExists) {
-      errorMessage.value = 'This email is already registered.'
-      return
-    }
-
-    users.push({
-      id: Date.now(),
+    await registerWithEmail({
       firstName,
       lastName,
       email,
-      password,
-      createdAt: new Date().toISOString()
+      password
     })
 
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
     router.push('/login')
   } catch (error) {
-    errorMessage.value = 'Unable to register. Please try again.'
+    errorMessage.value = error?.code === 'auth/email-already-in-use'
+      ? 'This email is already registered.'
+      : 'Unable to register. Please try again.'
   } finally {
     isSubmitting.value = false
   }

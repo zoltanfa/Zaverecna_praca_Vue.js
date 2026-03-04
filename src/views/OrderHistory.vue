@@ -1,20 +1,51 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { products } from '@/data/products.js'
+import { collection, getDocs, query, where } from 'firebase/firestore'
+import { products, loadProductsFromDatabase } from '@/data/products.js'
+import { db } from '@/firebase.js'
+import { useAuth } from '@/composables/useAuth.js'
 
-const ORDER_STORAGE_KEY = 'orderHistory'
 const ORDER_STATUS_STAGES = ['Created', 'Processed', 'Shipped']
 const orders = ref([])
 const selectedOrderId = ref(null)
+const { currentUser, waitForAuthInit } = useAuth()
 
 const selectedOrder = computed(() => (
   orders.value.find(order => order.id === selectedOrderId.value) || null
 ))
 
 const loadOrders = () => {
+  orders.value = []
+}
+
+const loadOrdersFromFirestore = async () => {
   try {
-    const savedOrders = localStorage.getItem(ORDER_STORAGE_KEY)
-    orders.value = savedOrders ? JSON.parse(savedOrders) : []
+    await waitForAuthInit()
+
+    if (!currentUser.value) {
+      loadOrders()
+      return
+    }
+
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      where('userId', '==', currentUser.value.uid)
+    )
+
+    const snapshot = await getDocs(ordersQuery)
+    const mappedOrders = snapshot.docs.map((docSnapshot) => {
+      const data = docSnapshot.data()
+      const createdAtDate = data.createdAt?.toDate?.()
+
+      return {
+        id: docSnapshot.id,
+        ...data,
+        date: createdAtDate ? createdAtDate.toISOString() : null,
+        createdAtMs: createdAtDate ? createdAtDate.getTime() : 0
+      }
+    })
+
+    orders.value = mappedOrders.sort((a, b) => b.createdAtMs - a.createdAtMs)
   } catch (error) {
     console.error('Failed to load order history:', error)
     orders.value = []
@@ -90,7 +121,8 @@ const getOrderStatus = (order) => {
 }
 
 onMounted(() => {
-  loadOrders()
+  loadProductsFromDatabase()
+  loadOrdersFromFirestore()
 })
 </script>
 
