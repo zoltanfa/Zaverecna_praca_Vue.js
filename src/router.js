@@ -8,6 +8,7 @@ import OrderHistory from '@/views/OrderHistory.vue'
 import Login from '@/views/Login.vue'
 import Register from '@/views/Register.vue'
 import Profile from '@/views/Profile.vue'
+import Admin from '@/views/Admin.vue'
 import { useAuth } from '@/composables/useAuth.js'
 
 const routes = [
@@ -19,7 +20,8 @@ const routes = [
   { path: '/orders', name: 'OrderHistory', component: OrderHistory, meta: { requiresAuth: true } },
   { path: '/login', name: 'Login', component: Login },
   { path: '/register', name: 'Register', component: Register },
-  { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } }
+  { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } },
+  { path: '/admin', name: 'Admin', component: Admin, meta: { requiresAuth: true, requiresRole: 'admin' } }
 ]
 
 const router = createRouter({
@@ -28,7 +30,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  const { currentUser, waitForAuthInit } = useAuth()
+  const { currentUser, isAdmin, waitForAuthInit } = useAuth()
   await waitForAuthInit()
 
   if (to.meta.requiresAuth && !currentUser.value) {
@@ -36,6 +38,10 @@ router.beforeEach(async (to) => {
   }
 
   if ((to.name === 'Login' || to.name === 'Register') && currentUser.value) {
+    return { name: 'Home' }
+  }
+
+  if (to.meta.requiresRole === 'admin' && !isAdmin.value) {
     return { name: 'Home' }
   }
 

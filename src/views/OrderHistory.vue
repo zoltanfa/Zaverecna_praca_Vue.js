@@ -5,7 +5,7 @@ import { products, loadProductsFromDatabase } from '@/data/products.js'
 import { db } from '@/firebase.js'
 import { useAuth } from '@/composables/useAuth.js'
 
-const ORDER_STATUS_STAGES = ['Created', 'Processed', 'Shipped']
+const ORDER_STATUS_STAGES = ['Created', 'Processed', 'Shipped', 'Delivered', 'Cancelled']
 const orders = ref([])
 const selectedOrderId = ref(null)
 const { currentUser, waitForAuthInit } = useAuth()
@@ -97,27 +97,21 @@ const getOrderStatus = (order) => {
     return order.status
   }
 
-  if (!order?.date) {
-    return 'Created'
+  return 'Created'
+}
+
+const getOrderStatusClass = (order) => {
+  const status = getOrderStatus(order)
+
+  if (status === 'Delivered') {
+    return 'delivered'
   }
 
-  const createdAt = new Date(order.date)
-  if (Number.isNaN(createdAt.getTime())) {
-    return 'Created'
+  if (status === 'Cancelled') {
+    return 'cancelled'
   }
 
-  const elapsedMs = Date.now() - createdAt.getTime()
-  const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24)
-
-  if (elapsedDays < 1) {
-    return 'Created'
-  }
-
-  if (elapsedDays < 3) {
-    return 'Processed'
-  }
-
-  return 'Shipped'
+  return ''
 }
 
 onMounted(() => {
@@ -153,7 +147,7 @@ onMounted(() => {
         </div>
         <div class="order-preview">
           <span>{{ getOrderItemsCount(order) }} items</span>
-          <span class="order-status">{{ getOrderStatus(order) }}</span>
+          <span class="order-status" :class="getOrderStatusClass(order)">{{ getOrderStatus(order) }}</span>
         </div>
       </button>
     </div>
@@ -167,7 +161,7 @@ onMounted(() => {
             <h2 class="order-title">Order #{{ selectedOrder.id }}</h2>
             <p class="order-date">{{ formatOrderDate(selectedOrder.date) }}</p>
             <div class="order-date-status">
-              <span class="order-status">{{ getOrderStatus(selectedOrder) }}</span>
+              <span class="order-status" :class="getOrderStatusClass(selectedOrder)">{{ getOrderStatus(selectedOrder) }}</span>
             </div>
           </div>
           <div class="order-total">{{ selectedOrder.total.toFixed(2) }} €</div>
@@ -277,6 +271,18 @@ onMounted(() => {
   padding: 2px 10px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.order-status.delivered {
+  color: #166534;
+  background-color: #dcfce7;
+  border-color: #86efac;
+}
+
+.order-status.cancelled {
+  color: #991b1b;
+  background-color: #fee2e2;
+  border-color: #fca5a5;
 }
 
 .order-detail-view {

@@ -57,7 +57,7 @@ const getPaymentLabel = () => (formData.value.paymentMethod === 'card'
       : 'Google Pay')
 
 const isValidPhoneNumber = (value) => {
-  return /^\+?[0-9\s()-]{7,20}$/.test(String(value || '').trim())
+  return /^\+?(?:[0-9]|\s|\(|\)|-){7,20}$/.test(String(value || '').trim())
 }
 
 const isCardExpired = (expiryValue) => {
@@ -380,7 +380,7 @@ onMounted(() => {
                   id="phone"
                   v-model="formData.phone"
                   type="tel"
-                  pattern="^\+?[0-9\s()-]{7,20}$"
+                  pattern="^\+?(?:[0-9]|\s|\(|\)|-){7,20}$"
                   title="Enter a valid phone number"
                   required
                   :disabled="isProcessing"

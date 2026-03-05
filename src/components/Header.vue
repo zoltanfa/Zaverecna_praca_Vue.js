@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 
 const { totalItems } = useCart()
 const { searchTerm } = useSearch()
-const { currentUser, logout } = useAuth()
+const { currentUser, isAdmin, logout } = useAuth()
 const router = useRouter()
 const accountMenuOpen = ref(false)
 const accountMenuRef = ref(null)
@@ -74,6 +74,7 @@ onBeforeUnmount(() => {
 
           <div v-if="accountMenuOpen" class="account-dropdown">
             <template v-if="currentUser">
+              <router-link v-if="isAdmin" to="/admin" class="account-link" @click="closeAccountMenu">Admin</router-link>
               <router-link to="/profile" class="account-link" @click="closeAccountMenu">Profile</router-link>
               <button type="button" class="account-link account-action" @click="handleLogout">Logout</button>
             </template>
@@ -218,7 +219,7 @@ nav {
 .cart-count {
   position: absolute;
   top: -8px;
-  right: -16px;
+  right: -8px;
   background-color: #dc2626;
   color: white;
   border-radius: 50%;
@@ -275,7 +276,7 @@ nav {
 
   .cart-count {
     top: -12px;
-    right: -12px;
+    right: -8px;
     width: 18px;
     height: 18px;
     font-size: 11px;

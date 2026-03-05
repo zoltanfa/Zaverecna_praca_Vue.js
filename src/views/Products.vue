@@ -37,15 +37,9 @@ const maxAvailablePrice = computed(() => {
 
 const selectedMinPrice = ref(0)
 const selectedMaxPrice = ref(0)
-const availableCategories = [
-  'CPU',
-  'GPU', 
-  'Motherboard',
-  'RAM',
-  'Storage',
-  'PSU',
-  'Case'
-]
+const availableCategories = computed(() => {
+  return [...new Set(products.map(product => product.category).filter(Boolean))]
+})
 
 const getProductSubcategory = (product) => product.subcategory
 const getProductBrand = (product) => product.brand || product.name.split(' ')[0]

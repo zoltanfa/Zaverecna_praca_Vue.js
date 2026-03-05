@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -14,16 +14,30 @@ import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firest
 import { auth, db } from '@/firebase.js'
 
 const currentUser = ref(null)
+const currentUserRole = ref('guest')
 const authInitialized = ref(false)
 let unsubscribeAuthListener = null
+
+const isAdmin = computed(() => currentUserRole.value === 'admin')
+
+const loadCurrentUserRole = async (user) => {
+  if (!user) {
+    currentUserRole.value = 'guest'
+    return
+  }
+
+  const profile = await getUserProfile(user.uid)
+  currentUserRole.value = profile?.role || 'customer'
+}
 
 const initAuth = () => {
   if (unsubscribeAuthListener) {
     return
   }
 
-  unsubscribeAuthListener = onAuthStateChanged(auth, (user) => {
+  unsubscribeAuthListener = onAuthStateChanged(auth, async (user) => {
     currentUser.value = user
+    await loadCurrentUserRole(user)
     authInitialized.value = true
   })
 }
@@ -54,6 +68,7 @@ const registerWithEmail = async ({ firstName, lastName, email, password }) => {
     firstName,
     lastName,
     email,
+    role: 'customer',
     phone: '',
     address: '',
     city: '',
@@ -90,18 +105,35 @@ const saveUserProfile = async (uid, payload) => {
   const existingSnapshot = await getDoc(userDocRef)
 
   if (existingSnapshot.exists()) {
+    const existingRole = existingSnapshot.data()?.role || 'customer'
+
     await updateDoc(userDocRef, {
       ...payload,
+      role: existingRole,
       updatedAt: serverTimestamp()
     })
+
+    if (auth.currentUser && auth.currentUser.uid === uid) {
+      currentUserRole.value = existingRole
+    }
+
     return
   }
 
   await setDoc(userDocRef, {
     ...payload,
+    role: 'customer',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   })
+
+  if (auth.currentUser && auth.currentUser.uid === uid) {
+    currentUserRole.value = 'customer'
+  }
+}
+
+const refreshCurrentUserRole = async () => {
+  await loadCurrentUserRole(auth.currentUser)
 }
 
 const changeUserEmail = async (newEmail) => {
@@ -125,6 +157,8 @@ const changeUserPassword = async ({ currentPassword, newPassword }) => {
 export function useAuth() {
   return {
     currentUser,
+    currentUserRole,
+    isAdmin,
     authInitialized,
     initAuth,
     waitForAuthInit,
@@ -134,6 +168,7 @@ export function useAuth() {
     getUserProfile,
     saveUserProfile,
     changeUserEmail,
-    changeUserPassword
+    changeUserPassword,
+    refreshCurrentUserRole
   }
 }
