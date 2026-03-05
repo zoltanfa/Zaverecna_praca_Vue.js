@@ -2,8 +2,6 @@
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { db } from '@/firebase.js'
 
-// Firestore is the primary source of product data.
-// Keep fallback empty to avoid bundling a huge static catalog in every build chunk.
 export const fallbackProducts = []
 
 export const products = reactive([...fallbackProducts])
