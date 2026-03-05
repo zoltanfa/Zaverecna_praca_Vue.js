@@ -1,27 +1,17 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Home from '@/views/Home.vue'
-import Products from '@/views/Products.vue'
-import ProductDetail from '@/views/ProductDetail.vue'
-import Cart from '@/views/Cart.vue'
-import Checkout from '@/views/Checkout.vue'
-import OrderHistory from '@/views/OrderHistory.vue'
-import Login from '@/views/Login.vue'
-import Register from '@/views/Register.vue'
-import Profile from '@/views/Profile.vue'
-import Admin from '@/views/Admin.vue'
 import { useAuth } from '@/composables/useAuth.js'
 
 const routes = [
-  { path: '/', name: 'Home', component: Home },
-  { path: '/products', name: 'Products', component: Products },
-  { path: '/product/:id', name: 'ProductDetail', component: ProductDetail },
-  { path: '/cart', name: 'Cart', component: Cart },
-  { path: '/checkout', name: 'Checkout', component: Checkout, meta: { requiresAuth: true } },
-  { path: '/orders', name: 'OrderHistory', component: OrderHistory, meta: { requiresAuth: true } },
-  { path: '/login', name: 'Login', component: Login },
-  { path: '/register', name: 'Register', component: Register },
-  { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } },
-  { path: '/admin', name: 'Admin', component: Admin, meta: { requiresAuth: true, requiresRole: 'admin' } }
+  { path: '/', name: 'Home', component: () => import('@/views/Home.vue') },
+  { path: '/products', name: 'Products', component: () => import('@/views/Products.vue') },
+  { path: '/product/:id', name: 'ProductDetail', component: () => import('@/views/ProductDetail.vue') },
+  { path: '/cart', name: 'Cart', component: () => import('@/views/Cart.vue') },
+  { path: '/checkout', name: 'Checkout', component: () => import('@/views/Checkout.vue'), meta: { requiresAuth: true } },
+  { path: '/orders', name: 'OrderHistory', component: () => import('@/views/OrderHistory.vue'), meta: { requiresAuth: true } },
+  { path: '/login', name: 'Login', component: () => import('@/views/Login.vue') },
+  { path: '/register', name: 'Register', component: () => import('@/views/Register.vue') },
+  { path: '/profile', name: 'Profile', component: () => import('@/views/Profile.vue'), meta: { requiresAuth: true } },
+  { path: '/admin', name: 'Admin', component: () => import('@/views/Admin.vue'), meta: { requiresAuth: true, requiresRole: 'admin' } }
 ]
 
 const router = createRouter({

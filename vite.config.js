@@ -10,6 +10,16 @@ export default defineConfig(({ mode }) => ({
     vue(),
     ...(mode === 'development' ? [vueDevTools()] : [])
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore']
+        }
+      }
+    }
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
