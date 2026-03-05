@@ -8,11 +8,12 @@
   },
   "scripts": {
     "dev": "vite",
+    "clean:dist": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Test-Path 'dist') { Remove-Item -LiteralPath 'dist' -Recurse -Force }\"",
     "build": "vite build",
-    "build:gh": "vite build --base=./ && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "build:gh": "npm run clean:dist && vite build --base=./ && node -e \"require('node:fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "preview": "vite preview",
     "preview:gh": "vite preview",
-    "deploy": "npm run build:gh && gh-pages -d dist"
+    "deploy": "npm run build:gh && gh-pages -d dist && npm run clean:dist"
   },
   "dependencies": {
     "firebase": "^12.10.0",
