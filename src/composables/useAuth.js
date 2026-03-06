@@ -5,7 +5,7 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   updateProfile,
-  updateEmail,
+  verifyBeforeUpdateEmail,
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider
@@ -17,6 +17,7 @@ const currentUser = ref(null)
 const currentUserRole = ref('guest')
 const authInitialized = ref(false)
 let unsubscribeAuthListener = null
+let authInitPromise = null
 
 const isAdmin = computed(() => currentUserRole.value === 'admin')
 
@@ -31,15 +32,26 @@ const loadCurrentUserRole = async (user) => {
 }
 
 const initAuth = () => {
-  if (unsubscribeAuthListener) {
-    return
+  if (authInitPromise) {
+    return authInitPromise
   }
 
-  unsubscribeAuthListener = onAuthStateChanged(auth, async (user) => {
-    currentUser.value = user
-    await loadCurrentUserRole(user)
-    authInitialized.value = true
+  authInitPromise = new Promise((resolve) => {
+    let didResolveInitialState = false
+
+    unsubscribeAuthListener = onAuthStateChanged(auth, async (user) => {
+      currentUser.value = user
+      await loadCurrentUserRole(user)
+      authInitialized.value = true
+
+      if (!didResolveInitialState) {
+        didResolveInitialState = true
+        resolve()
+      }
+    })
   })
+
+  return authInitPromise
 }
 
 const waitForAuthInit = async () => {
@@ -47,13 +59,7 @@ const waitForAuthInit = async () => {
     return
   }
 
-  await new Promise((resolve) => {
-    const stop = onAuthStateChanged(auth, () => {
-      authInitialized.value = true
-      stop()
-      resolve()
-    })
-  })
+  await initAuth()
 }
 
 const registerWithEmail = async ({ firstName, lastName, email, password }) => {
@@ -141,7 +147,7 @@ const changeUserEmail = async (newEmail) => {
     throw new Error('No authenticated user.')
   }
 
-  await updateEmail(auth.currentUser, newEmail)
+  await verifyBeforeUpdateEmail(auth.currentUser, newEmail)
 }
 
 const changeUserPassword = async ({ currentPassword, newPassword }) => {

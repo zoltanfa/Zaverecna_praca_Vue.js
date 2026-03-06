@@ -42,6 +42,20 @@ const checkoutError = ref('')
 const checkoutForm = ref(null)
 const currentStep = ref(1)
 
+const PHONE_REGEX = /^\+?(?:[0-9]|\s|\(|\)|-){7,20}$/
+const CARD_NUMBER_REGEX = /^\d{16}$/
+const EXPIRY_REGEX = /^(0[1-9]|1[0-2])\/\d{2}$/
+const CVV_REGEX = /^\d{3,4}$/
+const CHECKOUT_PROCESSING_DELAY_MS = 2000
+const CHECKOUT_REDIRECT_DELAY_MS = 2000
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+const setCheckoutError = (message) => {
+  checkoutError.value = message
+  return false
+}
+
 const getDeliveryLabel = () => (formData.value.deliveryMethod === 'home'
   ? 'Home Delivery'
   : formData.value.deliveryMethod === 'pickup'
@@ -57,7 +71,7 @@ const getPaymentLabel = () => (formData.value.paymentMethod === 'card'
       : 'Google Pay')
 
 const isValidPhoneNumber = (value) => {
-  return /^\+?(?:[0-9]|\s|\(|\)|-){7,20}$/.test(String(value || '').trim())
+  return PHONE_REGEX.test(String(value || '').trim())
 }
 
 const isCardExpired = (expiryValue) => {
@@ -77,24 +91,21 @@ const isCardExpired = (expiryValue) => {
 
 const validateCardFields = () => {
   const normalizedCardNumber = String(formData.value.cardNumber || '').replace(/\s+/g, '')
-  if (!/^\d{16}$/.test(normalizedCardNumber)) {
-    checkoutError.value = 'Card number must contain exactly 16 digits.'
-    return false
+  if (!CARD_NUMBER_REGEX.test(normalizedCardNumber)) {
+    return setCheckoutError('Card number must contain exactly 16 digits.')
   }
 
-  if (!/^(0[1-9]|1[0-2])\/\d{2}$/.test(String(formData.value.expiryDate || '').trim())) {
-    checkoutError.value = 'Expiry date must be in MM/YY format.'
-    return false
+  const normalizedExpiryDate = String(formData.value.expiryDate || '').trim()
+  if (!EXPIRY_REGEX.test(normalizedExpiryDate)) {
+    return setCheckoutError('Expiry date must be in MM/YY format.')
   }
 
-  if (isCardExpired(String(formData.value.expiryDate || '').trim())) {
-    checkoutError.value = 'Card is expired.'
-    return false
+  if (isCardExpired(normalizedExpiryDate)) {
+    return setCheckoutError('Card is expired.')
   }
 
-  if (!/^\d{3,4}$/.test(String(formData.value.cvv || '').trim())) {
-    checkoutError.value = 'CVV must be 3 or 4 digits.'
-    return false
+  if (!CVV_REGEX.test(String(formData.value.cvv || '').trim())) {
+    return setCheckoutError('CVV must be 3 or 4 digits.')
   }
 
   return true
@@ -102,8 +113,7 @@ const validateCardFields = () => {
 
 const validateCheckoutBeforeSubmit = () => {
   if (!isValidPhoneNumber(formData.value.phone)) {
-    checkoutError.value = 'Enter a valid phone number.'
-    return false
+    return setCheckoutError('Enter a valid phone number.')
   }
 
   if (formData.value.paymentMethod === 'card') {
@@ -120,21 +130,14 @@ const validateCurrentStep = () => {
     return false
   }
 
-  if (currentStep.value === 1 && !isValidPhoneNumber(formData.value.phone)) {
-    checkoutError.value = 'Enter a valid phone number.'
-    return false
+  const stepValidators = {
+    1: () => isValidPhoneNumber(formData.value.phone) || setCheckoutError('Enter a valid phone number.'),
+    2: () => formData.value.deliveryMethod !== 'pickupPoint' || !!formData.value.pickupPoint || setCheckoutError('Select a pickup point.'),
+    3: () => formData.value.paymentMethod !== 'card' || validateCardFields(),
+    4: () => true
   }
 
-  if (currentStep.value === 2 && formData.value.deliveryMethod === 'pickupPoint' && !formData.value.pickupPoint) {
-    checkoutError.value = 'Select a pickup point.'
-    return false
-  }
-
-  if (currentStep.value === 3 && formData.value.paymentMethod === 'card' && !validateCardFields()) {
-    return false
-  }
-
-  return true
+  return stepValidators[currentStep.value]?.() ?? true
 }
 
 watch(
@@ -180,12 +183,25 @@ const saveOrder = async ({ validatedItems, recomputedTotal }) => {
 
 const reserveStockForOrder = async () => {
   return runTransaction(db, async (transaction) => {
+    const productRefs = cart.value.map(cartItem => ({
+      cartItem,
+      productRef: doc(db, 'products', String(cartItem.id))
+    }))
+
+    const productSnapshots = []
+    for (const entry of productRefs) {
+      const productSnapshot = await transaction.get(entry.productRef)
+      productSnapshots.push({
+        ...entry,
+        productSnapshot
+      })
+    }
+
     const validatedItems = []
     let recomputedTotal = 0
+    const stockUpdates = []
 
-    for (const cartItem of cart.value) {
-      const productRef = doc(db, 'products', String(cartItem.id))
-      const productSnapshot = await transaction.get(productRef)
+    for (const { cartItem, productRef, productSnapshot } of productSnapshots) {
 
       if (!productSnapshot.exists()) {
         throw new Error(`${cartItem.name} is no longer available.`)
@@ -212,10 +228,17 @@ const reserveStockForOrder = async () => {
           throw new Error(`Not enough stock for ${cartItem.name}. Available: ${currentStock}.`)
         }
 
-        transaction.update(productRef, {
-          stock: currentStock - cartItem.quantity
+        stockUpdates.push({
+          productRef,
+          nextStock: currentStock - cartItem.quantity
         })
       }
+    }
+
+    for (const stockUpdate of stockUpdates) {
+      transaction.update(stockUpdate.productRef, {
+        stock: stockUpdate.nextStock
+      })
     }
 
     return {
@@ -234,7 +257,7 @@ const handleSubmit = async () => {
 
   isProcessing.value = true
 
-  await new Promise(resolve => setTimeout(resolve, 2000))
+  await delay(CHECKOUT_PROCESSING_DELAY_MS)
 
   try {
     const checkoutValidation = await reserveStockForOrder()
@@ -246,7 +269,7 @@ const handleSubmit = async () => {
     setTimeout(() => {
       clearCart()
       router.push('/')
-    }, 2000)
+    }, CHECKOUT_REDIRECT_DELAY_MS)
   } catch (error) {
     console.error('Failed to place order:', error)
     checkoutError.value = error?.message || 'Failed to place order. Please try again.'

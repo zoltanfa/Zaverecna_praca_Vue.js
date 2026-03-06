@@ -37,6 +37,23 @@ const passwordData = ref({
 })
 const showPasswordSection = ref(false)
 
+const normalizeProfileData = (rawData) => {
+  return {
+    firstName: String(rawData.firstName || '').trim(),
+    lastName: String(rawData.lastName || '').trim(),
+    email: String(rawData.email || '').trim().toLowerCase(),
+    phone: String(rawData.phone || '').trim(),
+    address: String(rawData.address || '').trim(),
+    city: String(rawData.city || '').trim(),
+    postalCode: String(rawData.postalCode || '').trim(),
+    country: String(rawData.country || '').trim()
+  }
+}
+
+const validateProfileData = (normalizedData) => {
+  return Object.values(normalizedData).every(Boolean)
+}
+
 const togglePasswordSection = () => {
   showPasswordSection.value = !showPasswordSection.value
 
@@ -75,11 +92,11 @@ const saveProfile = async () => {
   errorMessage.value = ''
   successMessage.value = ''
 
-  const { firstName, lastName, email, phone, address, city, postalCode, country } = formData.value
+  const normalizedProfile = normalizeProfileData(formData.value)
   const { currentPassword, newPassword, confirmNewPassword } = passwordData.value
   const wantsPasswordChange = showPasswordSection.value && !!(currentPassword || newPassword || confirmNewPassword)
 
-  if (!firstName || !lastName || !email || !phone || !address || !city || !postalCode || !country) {
+  if (!validateProfileData(normalizedProfile)) {
     errorMessage.value = 'Please fill in all fields.'
     return
   }
@@ -108,26 +125,19 @@ const saveProfile = async () => {
       await changeUserPassword({ currentPassword, newPassword })
     }
 
-    if (auth.currentUser && auth.currentUser.email !== email) {
-      await changeUserEmail(email)
+    if (auth.currentUser && String(auth.currentUser.email || '').toLowerCase() !== normalizedProfile.email) {
+      await changeUserEmail(normalizedProfile.email)
     }
 
     if (auth.currentUser) {
       await updateProfile(auth.currentUser, {
-        displayName: `${firstName} ${lastName}`.trim()
+        displayName: `${normalizedProfile.firstName} ${normalizedProfile.lastName}`.trim()
       })
     }
 
     if (currentUser.value) {
       await saveUserProfile(currentUser.value.uid, {
-        firstName,
-        lastName,
-        email,
-        phone,
-        address,
-        city,
-        postalCode,
-        country
+        ...normalizedProfile
       })
     }
 
@@ -141,10 +151,14 @@ const saveProfile = async () => {
   } catch (error) {
     if (error?.code === 'auth/email-already-in-use') {
       errorMessage.value = 'This email is already in use.'
-    } else if (error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential') {
-      errorMessage.value = 'Current password is incorrect.'
     } else if (error?.code === 'auth/requires-recent-login') {
       errorMessage.value = 'Please log in again before changing sensitive account details.'
+    } else if (error?.code === 'auth/invalid-email') {
+      errorMessage.value = 'Please enter a valid email address.'
+    } else if (error?.code === 'auth/too-many-requests') {
+      errorMessage.value = 'Too many attempts. Please wait and try again.'
+    } else if (error?.code === 'auth/wrong-password' || error?.code === 'auth/invalid-credential') {
+      errorMessage.value = 'Current password is incorrect.'
     } else {
       errorMessage.value = 'Unable to update profile. Please try again.'
     }

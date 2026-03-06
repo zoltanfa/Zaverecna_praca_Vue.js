@@ -19,6 +19,13 @@ import { products, loadProductsFromDatabase } from '@/data/products.js'
 const { currentUser, currentUserRole, refreshCurrentUserRole } = useAuth()
 const roleLabel = computed(() => currentUserRole.value || 'unknown')
 const ORDER_STATUS_OPTIONS = ['Created', 'Processed', 'Shipped', 'Delivered', 'Cancelled']
+const ORDER_STATUS_TRANSITIONS = {
+  Created: ['Processed', 'Cancelled'],
+  Processed: ['Shipped', 'Cancelled'],
+  Shipped: ['Delivered'],
+  Delivered: [],
+  Cancelled: []
+}
 const USER_ROLE_OPTIONS = ['customer', 'admin']
 
 const categories = ref([])
@@ -28,6 +35,7 @@ const editingCategoryName = ref('')
 const orders = ref([])
 const users = ref([])
 const selectedUserOrdersUid = ref('')
+const selectedUserOrderId = ref('')
 
 const isSavingProduct = ref(false)
 const isSavingCategory = ref(false)
@@ -180,12 +188,20 @@ const updateOrderStatus = async (orderId, nextStatus) => {
   isSavingOrder.value = true
 
   try {
+    const orderEntry = orders.value.find(order => order.id === orderId)
+    const currentStatus = orderEntry?.status || 'Created'
+    const allowedTransitions = ORDER_STATUS_TRANSITIONS[currentStatus] || []
+
+    if (nextStatus !== currentStatus && !allowedTransitions.includes(nextStatus)) {
+      adminError.value = `Invalid status transition: ${currentStatus} -> ${nextStatus}.`
+      return
+    }
+
     await updateDoc(doc(db, 'orders', orderId), {
       status: nextStatus,
       updatedAt: serverTimestamp()
     })
 
-    const orderEntry = orders.value.find(order => order.id === orderId)
     if (orderEntry) {
       orderEntry.status = nextStatus
     }
@@ -232,7 +248,25 @@ const getUserOrderCount = (uid) => {
 }
 
 const toggleUserOrders = (uid) => {
+  selectedUserOrderId.value = ''
   selectedUserOrdersUid.value = selectedUserOrdersUid.value === uid ? '' : uid
+}
+
+const toggleUserOrderDetails = (orderId) => {
+  selectedUserOrderId.value = selectedUserOrderId.value === orderId ? '' : orderId
+}
+
+const getOrderItemsCount = (order) => {
+  if (!order?.items?.length) {
+    return 0
+  }
+
+  return order.items.reduce((count, item) => count + (Number(item.quantity) || 0), 0)
+}
+
+const getOrderItemImage = (item) => {
+  const product = products.find(productEntry => productEntry.id === item.id)
+  return product?.image || ''
 }
 
 const ensureCategoryExists = async (name) => {
@@ -621,17 +655,20 @@ onMounted(async () => {
       <div v-if="selectedUserEntry" class="sub-panel">
         <h3>Orders For {{ selectedUserEntry.email || selectedUserEntry.uid }}</h3>
         <div v-if="selectedUserOrders.length === 0" class="empty-note">No orders for this account.</div>
-        <div v-else class="list">
-          <div v-for="order in selectedUserOrders" :key="order.id" class="list-item">
-            <div>
-              <strong>#{{ order.id }}</strong>
-              <small class="meta">
+        <div v-else class="list order-list">
+          <div v-for="order in selectedUserOrders" :key="order.id" class="list-item order-list-item">
+            <div class="order-summary">
+              <strong class="order-id">#{{ order.id }}</strong>
+              <small class="meta order-summary-line">
                 {{ Number(order.total || 0).toFixed(2) }} EUR
                 | {{ formatOrderDate(order.createdAt) }}
-                | {{ order.status || 'Created' }}
               </small>
+              <small class="meta">Items: {{ getOrderItemsCount(order) }}</small>
             </div>
             <div class="actions wrap-actions">
+              <button type="button" class="btn muted" @click="toggleUserOrderDetails(order.id)">
+                {{ selectedUserOrderId === order.id ? 'Hide Details' : 'Show Details' }}
+              </button>
               <select
                 :value="order.status || 'Created'"
                 class="input compact"
@@ -640,6 +677,35 @@ onMounted(async () => {
               >
                 <option v-for="status in ORDER_STATUS_OPTIONS" :key="status" :value="status">{{ status }}</option>
               </select>
+            </div>
+
+            <div v-if="selectedUserOrderId === order.id" class="order-detail-block">
+              <div class="detail-grid">
+                <p><strong>Name:</strong> {{ order.customerName || '—' }}</p>
+                <p><strong>Email:</strong> {{ order.email || '—' }}</p>
+                <p><strong>Address:</strong> {{ order.address || '—' }}</p>
+                <p><strong>Delivery:</strong> {{ order.deliveryLabel || order.deliveryMethod || '—' }}</p>
+                <p><strong>Payment:</strong> {{ order.paymentLabel || order.paymentMethod || '—' }}</p>
+                <p v-if="order.pickupPoint"><strong>Pickup point:</strong> {{ order.pickupPoint }}</p>
+              </div>
+
+              <div class="order-items-list">
+                <div v-for="item in order.items || []" :key="`${order.id}-${item.id}`" class="order-item-row">
+                  <div class="order-item-main">
+                    <img
+                      v-if="getOrderItemImage(item)"
+                      :src="getOrderItemImage(item)"
+                      :alt="item.name"
+                      class="order-item-image"
+                    />
+                    <div>
+                      <strong>{{ item.name }}</strong>
+                      <small class="meta">Qty: {{ Number(item.quantity) || 0 }}</small>
+                    </div>
+                  </div>
+                  <span>{{ (Number(item.price || 0) * (Number(item.quantity) || 0)).toFixed(2) }} EUR</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -653,6 +719,7 @@ onMounted(async () => {
   max-width: 1100px;
   margin: 0 auto;
   padding: 16px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 35%);
 }
 
 .main-title {
@@ -683,11 +750,12 @@ onMounted(async () => {
 }
 
 .panel {
-  background: #f9fafb;
+  background: #ffffff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 14px;
+  border-radius: 12px;
+  padding: 16px;
   margin-bottom: 16px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
 }
 
 .panel h2 {
@@ -714,6 +782,13 @@ onMounted(async () => {
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .input.wide {
@@ -727,6 +802,13 @@ onMounted(async () => {
   background: #2563eb;
   color: #fff;
   cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.12s, filter 0.2s;
+}
+
+.btn:hover:not(:disabled) {
+  filter: brightness(1.03);
+  transform: translateY(-1px);
 }
 
 .btn.muted {
@@ -750,13 +832,86 @@ onMounted(async () => {
 
 .list-item {
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 10px;
   background: #fff;
-  padding: 10px 12px;
+  padding: 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+.order-list {
+  gap: 10px;
+}
+
+.order-list-item {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.order-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-id {
+  color: #0f172a;
+}
+
+.order-summary-line {
+  color: #475569;
+}
+
+.order-detail-block {
+  width: 100%;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 10px;
+  padding-top: 12px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.order-detail-block p {
+  margin: 0 0 6px;
+}
+
+.order-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.order-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.order-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-item-image {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
 }
 
 .actions {
@@ -797,6 +952,10 @@ onMounted(async () => {
 
 @media (max-width: 768px) {
   .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 

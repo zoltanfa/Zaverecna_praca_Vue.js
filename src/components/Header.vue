@@ -218,7 +218,7 @@ nav {
 
 .cart-count {
   position: absolute;
-  top: -9px;
+  top: -8px;
   right: -8px;
   background-color: #dc2626;
   color: white;

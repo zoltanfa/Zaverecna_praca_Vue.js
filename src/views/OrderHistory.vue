@@ -1,13 +1,17 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, doc, getDocs, query, runTransaction, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { products, loadProductsFromDatabase } from '@/data/products.js'
 import { db } from '@/firebase.js'
 import { useAuth } from '@/composables/useAuth.js'
 
 const ORDER_STATUS_STAGES = ['Created', 'Processed', 'Shipped', 'Delivered', 'Cancelled']
+const CANCELLABLE_ORDER_STATUSES = ['Created', 'Processed']
 const orders = ref([])
 const selectedOrderId = ref(null)
+const isCancellingOrder = ref(false)
+const cancelErrorMessage = ref('')
+const cancelSuccessMessage = ref('')
 const { currentUser, waitForAuthInit } = useAuth()
 
 const selectedOrder = computed(() => (
@@ -80,10 +84,14 @@ const getOrderItemsCount = (order) => {
 }
 
 const openOrderDetails = (orderId) => {
+  cancelErrorMessage.value = ''
+  cancelSuccessMessage.value = ''
   selectedOrderId.value = orderId
 }
 
 const closeOrderDetails = () => {
+  cancelErrorMessage.value = ''
+  cancelSuccessMessage.value = ''
   selectedOrderId.value = null
 }
 
@@ -112,6 +120,104 @@ const getOrderStatusClass = (order) => {
   }
 
   return ''
+}
+
+const canCancelOrder = (order) => {
+  return CANCELLABLE_ORDER_STATUSES.includes(getOrderStatus(order))
+}
+
+const cancelOrderStatusOnly = async (orderId) => {
+  await updateDoc(doc(db, 'orders', orderId), {
+    status: 'Cancelled',
+    updatedAt: serverTimestamp()
+  })
+}
+
+const cancelOrderAndRestoreStock = async (orderId) => {
+  await runTransaction(db, async (transaction) => {
+    const orderRef = doc(db, 'orders', orderId)
+    const orderSnapshot = await transaction.get(orderRef)
+
+    if (!orderSnapshot.exists()) {
+      throw new Error('Order not found.')
+    }
+
+    const latestOrder = orderSnapshot.data()
+    const latestStatus = latestOrder?.status || 'Created'
+    if (!CANCELLABLE_ORDER_STATUSES.includes(latestStatus)) {
+      throw new Error('Order can no longer be cancelled.')
+    }
+
+    const items = Array.isArray(latestOrder?.items) ? latestOrder.items : []
+    const productReads = []
+
+    for (const item of items) {
+      const productRef = doc(db, 'products', String(item.id))
+      const productSnapshot = await transaction.get(productRef)
+      productReads.push({
+        item,
+        productRef,
+        productSnapshot
+      })
+    }
+
+    for (const { item, productRef, productSnapshot } of productReads) {
+      if (!productSnapshot.exists()) {
+        continue
+      }
+
+      const currentStock = productSnapshot.data()?.stock
+      if (typeof currentStock === 'number') {
+        const quantityToRestore = Number(item?.quantity) || 0
+        transaction.update(productRef, {
+          stock: currentStock + quantityToRestore
+        })
+      }
+    }
+
+    transaction.update(orderRef, {
+      status: 'Cancelled',
+      updatedAt: serverTimestamp()
+    })
+  })
+}
+
+const handleCancelOrder = async (order) => {
+  if (!order || !canCancelOrder(order) || isCancellingOrder.value) {
+    return
+  }
+
+  cancelErrorMessage.value = ''
+  cancelSuccessMessage.value = ''
+  isCancellingOrder.value = true
+
+  try {
+    try {
+      await cancelOrderAndRestoreStock(order.id)
+    } catch (error) {
+      const errorCode = String(error?.code || '').toLowerCase()
+      const message = String(error?.message || '').toLowerCase()
+      const isPermissionError = errorCode.includes('permission-denied') || message.includes('permission') || message.includes('insufficient')
+
+      if (!isPermissionError) {
+        throw error
+      }
+
+      await cancelOrderStatusOnly(order.id)
+    }
+
+    const orderEntry = orders.value.find(orderItem => orderItem.id === order.id)
+    if (orderEntry) {
+      orderEntry.status = 'Cancelled'
+    }
+
+    cancelSuccessMessage.value = 'Order cancelled successfully.'
+  } catch (error) {
+    console.error('Failed to cancel order:', error)
+    cancelErrorMessage.value = 'Unable to cancel order. It may no longer be cancellable.'
+  } finally {
+    isCancellingOrder.value = false
+  }
 }
 
 onMounted(() => {
@@ -165,6 +271,20 @@ onMounted(() => {
             </div>
           </div>
           <div class="order-total">{{ selectedOrder.total.toFixed(2) }} €</div>
+        </div>
+
+        <div class="order-actions">
+          <button
+            v-if="canCancelOrder(selectedOrder)"
+            type="button"
+            class="cancel-order-btn"
+            :disabled="isCancellingOrder"
+            @click="handleCancelOrder(selectedOrder)"
+          >
+            {{ isCancellingOrder ? 'Cancelling...' : 'Cancel Order' }}
+          </button>
+          <p v-if="cancelSuccessMessage" class="order-feedback success">{{ cancelSuccessMessage }}</p>
+          <p v-if="cancelErrorMessage" class="order-feedback error">{{ cancelErrorMessage }}</p>
         </div>
 
         <div class="order-customer">
@@ -333,6 +453,46 @@ onMounted(() => {
   margin-bottom: 12px;
   font-size: 14px;
   color: #374151;
+}
+
+.order-actions {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.cancel-order-btn {
+  border: 1px solid #fca5a5;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cancel-order-btn:hover:not(:disabled) {
+  background-color: #fecaca;
+}
+
+.cancel-order-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.order-feedback {
+  margin: 0;
+  font-size: 13px;
+}
+
+.order-feedback.success {
+  color: #166534;
+}
+
+.order-feedback.error {
+  color: #b91c1c;
 }
 
 .order-items {
