@@ -1,9 +1,10 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { collection, doc, getDocs, query, runTransaction, serverTimestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import { products, loadProductsFromDatabase } from '@/data/products.js'
 import { db } from '@/firebase.js'
 import { useAuth } from '@/composables/useAuth.js'
+import { cancelOrderWithRestock } from '@/composables/useOrderCancellation.js'
 
 const ORDER_STATUS_STAGES = ['Created', 'Processed', 'Shipped', 'Delivered', 'Cancelled']
 const CANCELLABLE_ORDER_STATUSES = ['Created', 'Processed']
@@ -133,55 +134,6 @@ const cancelOrderStatusOnly = async (orderId) => {
   })
 }
 
-const cancelOrderAndRestoreStock = async (orderId) => {
-  await runTransaction(db, async (transaction) => {
-    const orderRef = doc(db, 'orders', orderId)
-    const orderSnapshot = await transaction.get(orderRef)
-
-    if (!orderSnapshot.exists()) {
-      throw new Error('Order not found.')
-    }
-
-    const latestOrder = orderSnapshot.data()
-    const latestStatus = latestOrder?.status || 'Created'
-    if (!CANCELLABLE_ORDER_STATUSES.includes(latestStatus)) {
-      throw new Error('Order can no longer be cancelled.')
-    }
-
-    const items = Array.isArray(latestOrder?.items) ? latestOrder.items : []
-    const productReads = []
-
-    for (const item of items) {
-      const productRef = doc(db, 'products', String(item.id))
-      const productSnapshot = await transaction.get(productRef)
-      productReads.push({
-        item,
-        productRef,
-        productSnapshot
-      })
-    }
-
-    for (const { item, productRef, productSnapshot } of productReads) {
-      if (!productSnapshot.exists()) {
-        continue
-      }
-
-      const currentStock = productSnapshot.data()?.stock
-      if (typeof currentStock === 'number') {
-        const quantityToRestore = Number(item?.quantity) || 0
-        transaction.update(productRef, {
-          stock: currentStock + quantityToRestore
-        })
-      }
-    }
-
-    transaction.update(orderRef, {
-      status: 'Cancelled',
-      updatedAt: serverTimestamp()
-    })
-  })
-}
-
 const handleCancelOrder = async (order) => {
   if (!order || !canCancelOrder(order) || isCancellingOrder.value) {
     return
@@ -193,7 +145,10 @@ const handleCancelOrder = async (order) => {
 
   try {
     try {
-      await cancelOrderAndRestoreStock(order.id)
+      await cancelOrderWithRestock({
+        orderId: order.id,
+        cancellableStatuses: CANCELLABLE_ORDER_STATUSES
+      })
     } catch (error) {
       const errorCode = String(error?.code || '').toLowerCase()
       const message = String(error?.message || '').toLowerCase()

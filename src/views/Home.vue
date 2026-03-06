@@ -6,7 +6,7 @@ import { useSearch } from '@/composables/useSearch.js'
 
 const { searchTerm, matchesFullTextSearch, getSearchScore } = useSearch()
 const featuredProducts = computed(() => {
-  let featured = products.filter(product => [1, 2, 6, 11, 16, 21].includes(product.id))
+  let featured = products.filter(product => [1, 2, 6, 11, 16, 21, 27, 33].includes(product.id))
 
   if (searchTerm.value) {
     featured = featured.filter(product => matchesFullTextSearch(product, searchTerm.value))

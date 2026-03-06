@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ProductCard from '@/components/ProductCard.vue'
 import { products, loadProductsFromDatabase } from '@/data/products.js'
@@ -18,7 +18,23 @@ const selectedPsuWattages = ref([])
 const selectedCaseFormFactors = ref([])
 const selectedSort = ref('oldest')
 const currentPage = ref(1)
-const productsPerPage = 8
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+
+const productsPerPage = computed(() => {
+  if (viewportWidth.value <= 480) {
+    return 6
+  }
+
+  if (viewportWidth.value <= 768) {
+    return 8
+  }
+
+  if (viewportWidth.value < 1095) {
+    return 8
+  }
+
+  return 9
+})
 const minAvailablePrice = computed(() => {
   if (products.length === 0) {
     return 0
@@ -270,6 +286,15 @@ watch([minAvailablePrice, maxAvailablePrice], ([minPrice, maxPrice]) => {
 onMounted(() => {
   loadProductsFromDatabase()
 
+  const handleResize = () => {
+    viewportWidth.value = window.innerWidth
+  }
+
+  window.addEventListener('resize', handleResize)
+  onBeforeUnmount(() => {
+    window.removeEventListener('resize', handleResize)
+  })
+
   if (route.query.category) {
     selectedCategory.value = route.query.category
   }
@@ -404,12 +429,12 @@ const sortedProducts = computed(() => {
 })
 
 const totalPages = computed(() => {
-  return Math.max(1, Math.ceil(sortedProducts.value.length / productsPerPage))
+  return Math.max(1, Math.ceil(sortedProducts.value.length / productsPerPage.value))
 })
 
 const paginatedProducts = computed(() => {
-  const start = (currentPage.value - 1) * productsPerPage
-  const end = start + productsPerPage
+  const start = (currentPage.value - 1) * productsPerPage.value
+  const end = start + productsPerPage.value
   return sortedProducts.value.slice(start, end)
 })
 
@@ -421,7 +446,7 @@ const setPage = (page) => {
   currentPage.value = page
 }
 
-watch([filteredProducts, selectedSort], () => {
+watch([filteredProducts, selectedSort, productsPerPage], () => {
   currentPage.value = 1
 })
 </script>

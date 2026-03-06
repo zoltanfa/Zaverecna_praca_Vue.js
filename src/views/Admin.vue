@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase.js'
 import { useAuth } from '@/composables/useAuth.js'
+import { cancelOrderWithRestock } from '@/composables/useOrderCancellation.js'
 import { products, loadProductsFromDatabase } from '@/data/products.js'
 
 const { currentUser, currentUserRole, refreshCurrentUserRole } = useAuth()
@@ -197,10 +198,18 @@ const updateOrderStatus = async (orderId, nextStatus) => {
       return
     }
 
-    await updateDoc(doc(db, 'orders', orderId), {
-      status: nextStatus,
-      updatedAt: serverTimestamp()
-    })
+    if (nextStatus === 'Cancelled' && currentStatus !== 'Cancelled') {
+      await cancelOrderWithRestock({
+        orderId,
+        cancellableStatuses: ['Created', 'Processed']
+      })
+      await loadProductsFromDatabase(true)
+    } else {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: nextStatus,
+        updatedAt: serverTimestamp()
+      })
+    }
 
     if (orderEntry) {
       orderEntry.status = nextStatus
