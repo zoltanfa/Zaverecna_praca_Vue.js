@@ -80,7 +80,7 @@ const loadProfile = async () => {
 
   formData.value.firstName = profile?.firstName || firstName
   formData.value.lastName = profile?.lastName || lastNameParts.join(' ')
-  formData.value.email = profile?.email || firebaseUser.email || ''
+  formData.value.email = firebaseUser.email || profile?.email || ''
   formData.value.phone = profile?.phone || ''
   formData.value.address = profile?.address || ''
   formData.value.city = profile?.city || ''
@@ -136,8 +136,11 @@ const saveProfile = async () => {
     }
 
     if (currentUser.value) {
+      const emailFromAuth = String(auth.currentUser?.email || normalizedProfile.email || '').trim().toLowerCase()
+
       await saveUserProfile(currentUser.value.uid, {
-        ...normalizedProfile
+        ...normalizedProfile,
+        email: emailFromAuth
       })
     }
 

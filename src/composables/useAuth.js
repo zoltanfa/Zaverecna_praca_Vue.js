@@ -21,6 +21,38 @@ let authInitPromise = null
 
 const isAdmin = computed(() => currentUserRole.value === 'admin')
 
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase()
+
+const syncProfileEmailWithAuth = async (user) => {
+  if (!user) {
+    return
+  }
+
+  const authEmail = normalizeEmail(user.email)
+
+  if (!authEmail) {
+    return
+  }
+
+  const profileRef = doc(db, 'profiles', user.uid)
+  const snapshot = await getDoc(profileRef)
+
+  if (!snapshot.exists()) {
+    return
+  }
+
+  const profileEmail = normalizeEmail(snapshot.data()?.email)
+
+  if (profileEmail === authEmail) {
+    return
+  }
+
+  await updateDoc(profileRef, {
+    email: authEmail,
+    updatedAt: serverTimestamp()
+  })
+}
+
 const loadCurrentUserRole = async (user) => {
   if (!user) {
     currentUserRole.value = 'guest'
@@ -41,6 +73,7 @@ const initAuth = () => {
 
     unsubscribeAuthListener = onAuthStateChanged(auth, async (user) => {
       currentUser.value = user
+      await syncProfileEmailWithAuth(user)
       await loadCurrentUserRole(user)
       authInitialized.value = true
 
