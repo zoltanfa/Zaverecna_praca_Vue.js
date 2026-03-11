@@ -687,6 +687,10 @@ watch([filteredProducts, selectedSort, productsPerPage], () => {
   margin: 0;
 }
 
+.filter-option input[type="radio"] {
+  margin: 0;
+}
+
 .products-section {
   flex: 1;
 }
