@@ -28,9 +28,13 @@ const handleLogin = async () => {
 
     router.push('/')
   } catch (error) {
-    errorMessage.value = error?.code === 'auth/invalid-credential'
-      ? 'Invalid email or password.'
-      : 'Unable to log in. Please try again.'
+    if (error?.code === 'auth/invalid-credential') {
+      errorMessage.value = 'Invalid email or password.'
+    } else if (String(error?.code || '').startsWith('auth/requests-from-referer-')) {
+      errorMessage.value = 'Login is blocked for this URL.'
+    } else {
+      errorMessage.value = 'Unable to log in. Please try again.'
+    }
   } finally {
     isSubmitting.value = false
   }

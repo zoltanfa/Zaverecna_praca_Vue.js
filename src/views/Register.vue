@@ -48,9 +48,13 @@ const handleRegister = async () => {
 
     router.push('/login')
   } catch (error) {
-    errorMessage.value = error?.code === 'auth/email-already-in-use'
-      ? 'This email is already registered.'
-      : 'Unable to register. Please try again.'
+    if (error?.code === 'auth/email-already-in-use') {
+      errorMessage.value = 'This email is already registered.'
+    } else if (String(error?.code || '').startsWith('auth/requests-from-referer-')) {
+      errorMessage.value = 'Registration is blocked for this URL.'
+    } else {
+      errorMessage.value = 'Unable to register. Please try again.'
+    }
   } finally {
     isSubmitting.value = false
   }

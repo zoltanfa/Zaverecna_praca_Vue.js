@@ -96,7 +96,8 @@ const waitForAuthInit = async () => {
 }
 
 const registerWithEmail = async ({ firstName, lastName, email, password }) => {
-  const { user } = await createUserWithEmailAndPassword(auth, email, password)
+  const normalizedEmail = normalizeEmail(email)
+  const { user } = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
   const fullName = `${firstName} ${lastName}`.trim()
 
   if (fullName) {
@@ -106,7 +107,7 @@ const registerWithEmail = async ({ firstName, lastName, email, password }) => {
   await setDoc(doc(db, 'profiles', user.uid), {
     firstName,
     lastName,
-    email,
+    email: normalizedEmail,
     role: 'customer',
     phone: '',
     address: '',
@@ -121,7 +122,8 @@ const registerWithEmail = async ({ firstName, lastName, email, password }) => {
 }
 
 const loginWithEmail = async ({ email, password }) => {
-  const { user } = await signInWithEmailAndPassword(auth, email, password)
+  const normalizedEmail = normalizeEmail(email)
+  const { user } = await signInWithEmailAndPassword(auth, normalizedEmail, password)
   return user
 }
 
