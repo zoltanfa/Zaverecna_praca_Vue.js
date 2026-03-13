@@ -73,8 +73,14 @@ const initAuth = () => {
 
     unsubscribeAuthListener = onAuthStateChanged(auth, async (user) => {
       currentUser.value = user
-      await syncProfileEmailWithAuth(user)
-      await loadCurrentUserRole(user)
+
+      try {
+        await syncProfileEmailWithAuth(user)
+        await loadCurrentUserRole(user)
+      } catch (error) {
+        console.error('Auth sync failed:', error)
+      }
+
       authInitialized.value = true
 
       if (!didResolveInitialState) {

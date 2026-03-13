@@ -47,6 +47,8 @@ const adminSuccess = ref('')
 const showCategoryManagement = ref(false)
 const showProductManagement = ref(false)
 const showUserManagement = ref(false)
+const hasLoadedUserManagementData = ref(false)
+const isLoadingUserManagementData = ref(false)
 
 const productForm = ref({
   id: null,
@@ -83,6 +85,24 @@ const selectedUserEntry = computed(() => {
   }
 
   return users.value.find(user => user.uid === selectedUserOrdersUid.value) || null
+})
+
+const orderCountByUser = computed(() => {
+  const counts = new Map()
+  for (const order of orders.value) {
+    const uid = String(order?.userId || '')
+    if (!uid) {
+      continue
+    }
+
+    counts.set(uid, (counts.get(uid) || 0) + 1)
+  }
+
+  return counts
+})
+
+const productImageById = computed(() => {
+  return new Map(products.map(product => [String(product.id), product.image || '']))
 })
 
 const toCategoryId = (name) => {
@@ -163,11 +183,22 @@ const loadUsers = async () => {
     .sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')))
 }
 
-const refreshAdminData = async () => {
+const refreshCatalogData = async () => {
   await loadProductsFromDatabase(true)
   await loadCategories()
-  await loadOrders()
-  await loadUsers()
+}
+
+const loadUserManagementData = async (forceRefresh = false) => {
+  if (hasLoadedUserManagementData.value && !forceRefresh) {
+    return
+  }
+
+  await Promise.all([
+    loadOrders(),
+    loadUsers()
+  ])
+
+  hasLoadedUserManagementData.value = true
 }
 
 const formatOrderDate = (value) => {
@@ -199,10 +230,26 @@ const updateOrderStatus = async (orderId, nextStatus) => {
     }
 
     if (nextStatus === 'Cancelled' && currentStatus !== 'Cancelled') {
-      await cancelOrderWithRestock({
-        orderId,
-        cancellableStatuses: ['Created', 'Processed']
-      })
+      try {
+        await cancelOrderWithRestock({
+          orderId,
+          cancellableStatuses: ['Created', 'Processed']
+        })
+      } catch (restockError) {
+        const code = String(restockError?.code || '').toLowerCase()
+        const msg = String(restockError?.message || '').toLowerCase()
+        const isPermission = code.includes('permission-denied') || msg.includes('permission') || msg.includes('insufficient')
+
+        if (!isPermission) {
+          throw restockError
+        }
+
+        await updateDoc(doc(db, 'orders', orderId), {
+          status: 'Cancelled',
+          updatedAt: serverTimestamp()
+        })
+      }
+
       await loadProductsFromDatabase(true)
     } else {
       await updateDoc(doc(db, 'orders', orderId), {
@@ -252,10 +299,6 @@ const updateUserRoleById = async (uid, nextRole) => {
   }
 }
 
-const getUserOrderCount = (uid) => {
-  return orders.value.filter(order => order.userId === uid).length
-}
-
 const toggleUserOrders = (uid) => {
   selectedUserOrderId.value = ''
   selectedUserOrdersUid.value = selectedUserOrdersUid.value === uid ? '' : uid
@@ -271,11 +314,6 @@ const getOrderItemsCount = (order) => {
   }
 
   return order.items.reduce((count, item) => count + (Number(item.quantity) || 0), 0)
-}
-
-const getOrderItemImage = (item) => {
-  const product = products.find(productEntry => productEntry.id === item.id)
-  return product?.image || ''
 }
 
 const ensureCategoryExists = async (name) => {
@@ -373,7 +411,7 @@ const saveEditedCategory = async () => {
     }
 
     cancelEditCategory()
-    await refreshAdminData()
+    await refreshCatalogData()
     adminSuccess.value = 'Category updated.'
   } catch (error) {
     console.error('Failed to update category:', error)
@@ -496,7 +534,7 @@ const saveProduct = async () => {
     }, { merge: true })
 
     await ensureCategoryExists(category)
-    await refreshAdminData()
+    await refreshCatalogData()
     resetProductForm()
     adminSuccess.value = 'Product saved.'
   } catch (error) {
@@ -513,7 +551,7 @@ const deleteProduct = async (productId) => {
 
   try {
     await deleteDoc(doc(db, 'products', String(productId)))
-    await refreshAdminData()
+    await refreshCatalogData()
     adminSuccess.value = 'Product deleted.'
   } catch (error) {
     console.error('Failed to delete product:', error)
@@ -523,8 +561,28 @@ const deleteProduct = async (productId) => {
   }
 }
 
+const toggleUserManagement = async () => {
+  showUserManagement.value = !showUserManagement.value
+
+  if (!showUserManagement.value) {
+    return
+  }
+
+  isLoadingUserManagementData.value = true
+  resetMessages()
+
+  try {
+    await loadUserManagementData()
+  } catch (error) {
+    console.error('Failed to load user management data:', error)
+    adminError.value = 'Unable to load users and orders.'
+  } finally {
+    isLoadingUserManagementData.value = false
+  }
+}
+
 onMounted(async () => {
-  await refreshAdminData()
+  await refreshCatalogData()
   resetProductForm()
 })
 </script>
@@ -560,7 +618,7 @@ onMounted(async () => {
           type="button"
           class="btn"
           :class="{ muted: !showUserManagement }"
-          @click="showUserManagement = !showUserManagement"
+          @click="toggleUserManagement"
         >
           {{ showUserManagement ? 'Hide User Management' : 'Show User Management' }}
         </button>
@@ -639,11 +697,12 @@ onMounted(async () => {
 
     <section v-if="showUserManagement" class="panel">
       <h2>Users</h2>
+      <p v-if="isLoadingUserManagementData" class="empty-note">Loading users and orders...</p>
       <div class="list">
         <div v-for="user in users" :key="user.uid" class="list-item">
           <div>
             <strong>{{ user.firstName }} {{ user.lastName }}</strong>
-            <small class="meta">{{ user.email || user.uid }} | orders: {{ getUserOrderCount(user.uid) }}</small>
+            <small class="meta">{{ user.email || user.uid }} | orders: {{ orderCountByUser.get(String(user.uid)) || 0 }}</small>
           </div>
           <div class="actions wrap-actions">
             <select
@@ -702,8 +761,8 @@ onMounted(async () => {
                 <div v-for="item in order.items || []" :key="`${order.id}-${item.id}`" class="order-item-row">
                   <div class="order-item-main">
                     <img
-                      v-if="getOrderItemImage(item)"
-                      :src="getOrderItemImage(item)"
+                      v-if="productImageById.get(String(item.id))"
+                      :src="productImageById.get(String(item.id))"
                       :alt="item.name"
                       class="order-item-image"
                     />
@@ -856,6 +915,8 @@ onMounted(async () => {
 
 .order-list-item {
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .order-summary {
@@ -902,25 +963,23 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px;
-  background: #ffffff;
+  gap: 8px;
 }
 
 .order-item-main {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .order-item-image {
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 48px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 6px;
   border: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .actions {

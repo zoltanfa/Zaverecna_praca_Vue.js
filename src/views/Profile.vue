@@ -121,27 +121,24 @@ const saveProfile = async () => {
   isSubmitting.value = true
 
   try {
-    if (wantsPasswordChange) {
-      await changeUserPassword({ currentPassword, newPassword })
+    const firebaseUser = auth.currentUser
+
+    if (!firebaseUser || !currentUser.value) {
+      throw new Error('User not authenticated.')
     }
 
-    if (auth.currentUser && String(auth.currentUser.email || '').toLowerCase() !== normalizedProfile.email) {
+    await saveUserProfile(currentUser.value.uid, normalizedProfile)
+
+    if (String(firebaseUser.email || '').toLowerCase() !== normalizedProfile.email) {
       await changeUserEmail(normalizedProfile.email)
     }
 
-    if (auth.currentUser) {
-      await updateProfile(auth.currentUser, {
-        displayName: `${normalizedProfile.firstName} ${normalizedProfile.lastName}`.trim()
-      })
-    }
+    await updateProfile(firebaseUser, {
+      displayName: `${normalizedProfile.firstName} ${normalizedProfile.lastName}`.trim()
+    })
 
-    if (currentUser.value) {
-      const emailFromAuth = String(auth.currentUser?.email || normalizedProfile.email || '').trim().toLowerCase()
-
-      await saveUserProfile(currentUser.value.uid, {
-        ...normalizedProfile,
-        email: emailFromAuth
-      })
+    if (wantsPasswordChange) {
+      await changeUserPassword({ currentPassword, newPassword })
     }
 
     if (wantsPasswordChange) {

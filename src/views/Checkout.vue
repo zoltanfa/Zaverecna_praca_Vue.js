@@ -38,6 +38,7 @@ const formData = ref({
 
 const submitted = ref(false)
 const isProcessing = ref(false)
+const isPrefillLoading = ref(true)
 const checkoutError = ref('')
 const checkoutForm = ref(null)
 const currentStep = ref(1)
@@ -323,7 +324,11 @@ const prefillCheckoutFromProfile = async () => {
 }
 
 onMounted(() => {
-  prefillCheckoutFromProfile()
+  prefillCheckoutFromProfile().catch((error) => {
+    console.error('Failed to prefill checkout form:', error)
+  }).finally(() => {
+    isPrefillLoading.value = false
+  })
 })
 </script>
 
@@ -332,7 +337,11 @@ onMounted(() => {
   <main class="main">
     <h1 class="main-title">Checkout</h1>
 
-    <div v-if="submitted" class="success-message">
+    <div v-if="isPrefillLoading" class="checkout-loading">
+      <p>Loading checkout...</p>
+    </div>
+
+    <div v-else-if="submitted" class="success-message">
       <h2>Order Placed Successfully!</h2>
       <p>Thank you for your purchase. Redirecting to home page...</p>
     </div>

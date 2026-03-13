@@ -50,6 +50,7 @@ export const loadProductsFromDatabase = async (forceRefresh = false) => {
       products.splice(0, products.length, ...databaseProducts)
     } catch (error) {
       console.error('Failed to load products from Firestore:', error)
+      loadProductsPromise = null
       if (products.length === 0) {
         products.splice(0, products.length, ...fallbackProducts)
       }
